@@ -1,0 +1,84 @@
+use gtk4::prelude::*;
+use gtk4::{Application, ApplicationWindow};
+use gtk4_layer_shell::{Layer, LayerShell};
+use tracing::{info, error};
+use tracing_subscriber;
+
+mod panel;
+mod widgets;
+mod config;
+
+use panel::Panel;
+use config::PanelConfig;
+
+fn main() -> anyhow::Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+    
+    info!("Starting Niri Panel");
+
+    // Create GTK application
+    let app = Application::builder()
+        .application_id("org.niri.panel")
+        .build();
+
+    app.connect_activate(|app| {
+        if let Err(e) = build_ui(app) {
+            error!("Failed to build UI: {}", e);
+        }
+    });
+
+    // Run the application
+    app.run();
+    Ok(())
+}
+
+fn build_ui(app: &Application) -> anyhow::Result<()> {
+    // Load configuration
+    let config = PanelConfig::load()?;
+    
+    // Create main window
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Niri Panel")
+        .build();
+
+    // Initialize layer shell
+    window.init_layer_shell();
+    window.set_layer(Layer::Top);
+    window.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
+    window.set_anchor(gtk4_layer_shell::Edge::Left, true);
+    window.set_anchor(gtk4_layer_shell::Edge::Right, true);
+    
+    // Set exclusive zone to reserve space (height + padding + margin)
+    window.set_exclusive_zone(config.height + 20 + 5); // 20 for padding (top+bottom), 10 for margin
+    
+    // Enable keyboard interactivity for the panel
+    window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
+    
+    // Set window properties
+    window.set_height_request(config.height + 20); // Add 20px for top+bottom padding
+    window.set_margin(gtk4_layer_shell::Edge::Top, 0);
+    window.set_margin(gtk4_layer_shell::Edge::Bottom, 0);
+    window.set_margin(gtk4_layer_shell::Edge::Left, 0);
+    window.set_margin(gtk4_layer_shell::Edge::Right, 0);
+    
+    // Create and setup panel
+    let panel = Panel::new(config)?;
+    window.set_child(Some(panel.container()));
+    
+    // Apply CSS styling
+    let css_provider = gtk4::CssProvider::new();
+    css_provider.load_from_data(include_str!("../assets/style.css"));
+    
+    gtk4::style_context_add_provider_for_display(
+        &gtk4::gdk::Display::default().expect("Could not get default display"),
+        &css_provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    
+    window.present();
+    
+    info!("Niri Panel initialized successfully");
+    Ok(())
+}

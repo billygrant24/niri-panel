@@ -1,0 +1,19 @@
+mod clock;
+mod workspaces;
+mod launcher;
+mod battery;
+mod network;
+mod sound;
+mod places;
+mod power;
+mod search;
+
+pub use clock::Clock;
+pub use workspaces::Workspaces;
+pub use launcher::Launcher;
+pub use battery::Battery;
+pub use network::Network;
+pub use sound::Sound;
+pub use places::Places;
+pub use power::Power;
+pub use search::Search;
