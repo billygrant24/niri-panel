@@ -30,7 +30,6 @@ struct SystemStats {
     memory_usage: (u64, u64), // (used, total) in MB
     disk_usage: (u64, u64),    // (used, total) in GB
     packages: String,
-    shell: String,
 }
 
 impl PowerAction {
@@ -192,7 +191,6 @@ impl Power {
         let memory_label = Self::create_stat_label("Memory", "0 MB / 0 MB");
         let disk_label = Self::create_stat_label("Disk (/)", "0 GB / 0 GB");
         let packages_label = Self::create_stat_label("Packages", "Loading...");
-        let shell_label = Self::create_stat_label("Shell", "Loading...");
         
         stats_box.append(&os_label);
         stats_box.append(&kernel_label);
@@ -203,14 +201,13 @@ impl Power {
         stats_box.append(&memory_label);
         stats_box.append(&disk_label);
         stats_box.append(&packages_label);
-        stats_box.append(&shell_label);
         
         popover_box.append(&stats_box);
         
         // Update stats immediately and schedule updates
         Self::update_stats(&os_label, &kernel_label, &hostname_label, &cpu_model_label,
                           &uptime_label, &cpu_label, &memory_label, &disk_label,
-                          &packages_label, &shell_label);
+                          &packages_label);
         
         let os_weak = os_label.downgrade();
         let kernel_weak = kernel_label.downgrade();
@@ -221,7 +218,6 @@ impl Power {
         let memory_weak = memory_label.downgrade();
         let disk_weak = disk_label.downgrade();
         let packages_weak = packages_label.downgrade();
-        let shell_weak = shell_label.downgrade();
         let popover_weak = popover.downgrade();
         
         glib::timeout_add_local(Duration::from_secs(2), move || {
@@ -230,14 +226,14 @@ impl Power {
                 if popover.is_visible() {
                     if let (Some(os), Some(kernel), Some(hostname), Some(cpu_model),
                             Some(uptime), Some(cpu), Some(memory), Some(disk),
-                            Some(packages), Some(shell)) = 
+                            Some(packages)) = 
                         (os_weak.upgrade(), kernel_weak.upgrade(), hostname_weak.upgrade(),
                          cpu_model_weak.upgrade(), uptime_weak.upgrade(), cpu_weak.upgrade(),
                          memory_weak.upgrade(), disk_weak.upgrade(),
-                         packages_weak.upgrade(), shell_weak.upgrade()) {
+                         packages_weak.upgrade()) {
                         Self::update_stats(&os, &kernel, &hostname, &cpu_model,
                                          &uptime, &cpu, &memory, &disk,
-                                         &packages, &shell);
+                                         &packages);
                     }
                 }
                 glib::ControlFlow::Continue
@@ -303,7 +299,7 @@ impl Power {
     
     fn update_stats(os_box: &Box, kernel_box: &Box, hostname_box: &Box, cpu_model_box: &Box,
                     uptime_box: &Box, cpu_box: &Box, memory_box: &Box, disk_box: &Box,
-                    packages_box: &Box, shell_box: &Box) {
+                    packages_box: &Box) {
         let stats = Self::get_system_stats();
         
         // Update OS
@@ -369,13 +365,6 @@ impl Power {
                 label.set_text(&stats.packages);
             }
         }
-        
-        // Update Shell
-        if let Some(value_label) = shell_box.last_child() {
-            if let Some(label) = value_label.downcast_ref::<Label>() {
-                label.set_text(&stats.shell);
-            }
-        }
     }
     
     fn get_system_stats() -> SystemStats {
@@ -389,7 +378,6 @@ impl Power {
             memory_usage: (0, 0),
             disk_usage: (0, 0),
             packages: "Unknown".to_string(),
-            shell: "Unknown".to_string(),
         };
         
         // Get OS information
@@ -569,45 +557,6 @@ impl Power {
         
         if package_count > 0 {
             stats.packages = format!("{} ({})", package_count, package_managers.join(", "));
-        }
-        
-        // Get shell
-        if let Ok(shell_path) = std::env::var("SHELL") {
-            if let Some(shell_name) = shell_path.split('/').last() {
-                stats.shell = shell_name.to_string();
-                
-                // Try to get shell version
-                match shell_name {
-                    "bash" => {
-                        if let Ok(output) = Command::new("bash").arg("--version").output() {
-                            if let Some(version_line) = String::from_utf8_lossy(&output.stdout).lines().next() {
-                                if let Some(version) = version_line.split_whitespace().nth(3) {
-                                    stats.shell = format!("{} {}", shell_name, version);
-                                }
-                            }
-                        }
-                    }
-                    "zsh" => {
-                        if let Ok(output) = Command::new("zsh").arg("--version").output() {
-                            if let Some(version_line) = String::from_utf8_lossy(&output.stdout).lines().next() {
-                                if let Some(version) = version_line.split_whitespace().nth(1) {
-                                    stats.shell = format!("{} {}", shell_name, version);
-                                }
-                            }
-                        }
-                    }
-                    "fish" => {
-                        if let Ok(output) = Command::new("fish").arg("--version").output() {
-                            if let Some(version_line) = String::from_utf8_lossy(&output.stdout).lines().next() {
-                                if let Some(version) = version_line.split_whitespace().nth(2) {
-                                    stats.shell = format!("{} {}", shell_name, version);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
         }
         
         stats
