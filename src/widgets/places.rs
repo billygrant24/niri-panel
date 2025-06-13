@@ -1,10 +1,9 @@
 use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, Label, ListBox, ListBoxRow, Separator, Notebook};
+use gtk4::{Button, Image, Popover, Box, Orientation, Label, Separator, Notebook};
 use anyhow::Result;
 use std::process::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::env;
 use tracing::warn;
 
 pub struct Places {
@@ -16,6 +15,7 @@ struct PlaceInfo {
     name: String,
     path: PathBuf,
     icon: String,
+    #[allow(dead_code)]
     is_bookmark: bool,
 }
 

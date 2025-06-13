@@ -1,13 +1,10 @@
 use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, SearchEntry, ListBox, ListBoxRow, Label, ScrolledWindow, EventControllerKey};
-use gtk4::gdk;
+use gtk4::{Button, Image, Popover, Box, Orientation, SearchEntry, ListBox, ListBoxRow, Label, ScrolledWindow};
 use anyhow::Result;
 use std::process::Command;
 use std::fs;
 use std::path::Path;
 use tracing::{warn, info};
-use glib::timeout_add_local;
-use std::time::Duration;
 
 pub struct Launcher {
     button: Button,
@@ -90,7 +87,7 @@ impl Launcher {
         
         // Load applications
         let apps = Self::load_applications();
-        let apps_clone = apps.clone();
+        let _apps_clone = apps.clone();
         
         // Populate initial list
         Self::populate_app_list(&app_list, &apps, "");

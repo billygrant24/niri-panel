@@ -3,9 +3,7 @@ use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow,
 use glib::timeout_add_seconds_local;
 use anyhow::Result;
 use std::process::Command;
-use std::fs;
-use std::path::Path;
-use tracing::{info, warn};
+use tracing::warn;
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -45,6 +43,7 @@ struct WifiNetwork {
     signal: u8,
     secured: bool,
     connected: bool,
+    #[allow(dead_code)]
     bssid: String,
 }
 

@@ -5,8 +5,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
-use tracing::{info, warn};
+use tracing::warn;
 
 pub struct Battery {
     button: Button,

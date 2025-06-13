@@ -21,6 +21,7 @@ struct WindowInfo {
 struct WorkspaceInfo {
     id: u64,
     idx: u32,
+    #[allow(dead_code)]
     is_active: bool,
     is_focused: bool,
     windows: Vec<WindowInfo>,
@@ -90,7 +91,7 @@ impl Workspaces {
         button
     }
     
-    fn show_window_picker(button: &Button, workspace_id: u64, workspace_idx: u32, x: f64, y: f64) {
+    fn show_window_picker(button: &Button, workspace_id: u64, workspace_idx: u32, _x: f64, _y: f64) {
         info!("Showing window picker for workspace {} (id: {})", workspace_idx, workspace_id);
         
         // Create popover on demand

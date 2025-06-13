@@ -1,10 +1,9 @@
 use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, Label, ListBox, ListBoxRow};
+use gtk4::{Button, Image, Popover, Box, Orientation, Label};
 use anyhow::Result;
 use std::process::Command;
 use std::fs;
 use std::time::Duration;
-use tracing::warn;
 
 pub struct Power {
     button: Button,

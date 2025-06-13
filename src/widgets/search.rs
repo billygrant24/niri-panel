@@ -1,11 +1,9 @@
 use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, Label, Entry, ListBox, ListBoxRow, ScrolledWindow, Separator};
+use gtk4::{Button, Image, Popover, Box, Orientation, Label, Entry, ListBox, ListBoxRow, ScrolledWindow};
 use anyhow::Result;
-use std::process::{Command, Stdio};
-use std::io::Write;
+use std::process::Command;
 use std::thread;
 use std::sync::mpsc;
-use tracing::{info, warn};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -257,7 +255,7 @@ impl Search {
         
         // Handle Enter key to activate selected item
         let results_list_for_enter = results_list.clone();
-        let popover_for_enter = popover.downgrade();
+        let _popover_for_enter = popover.downgrade();
         search_entry.connect_activate(move |_| {
             if let Some(selected_row) = results_list_for_enter.selected_row() {
                 // Simulate row activation
