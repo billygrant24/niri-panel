@@ -103,7 +103,9 @@
     font-size: 11px;
     opacity: 0.6;
     text-transform: uppercase;
-}/* Panel styling */
+}
+
+/* Panel styling */
 .panel {
     background-color: #2b2e3b;
     padding: 0;

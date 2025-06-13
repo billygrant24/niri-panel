@@ -3,7 +3,7 @@ use gtk4::{Box, Orientation};
 use anyhow::Result;
 
 use crate::config::PanelConfig;
-use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search};
+use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search, Overview};
 
 pub struct Panel {
     container: Box,
@@ -38,6 +38,9 @@ impl Panel {
         right_box.set_hexpand(false);
         
         // Add widgets
+        let overview = Overview::new()?;
+        left_box.append(overview.widget());
+
         if config.show_launcher {
             let launcher = Launcher::new()?;
             left_box.append(launcher.widget());

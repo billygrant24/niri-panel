@@ -7,6 +7,7 @@ mod sound;
 mod places;
 mod power;
 mod search;
+mod overview;
 
 pub use clock::Clock;
 pub use workspaces::Workspaces;
@@ -17,3 +18,4 @@ pub use sound::Sound;
 pub use places::Places;
 pub use power::Power;
 pub use search::Search;
+pub use overview::Overview;
