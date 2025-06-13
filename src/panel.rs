@@ -14,8 +14,8 @@ impl Panel {
     pub fn new(config: PanelConfig) -> Result<Self> {
         let container = Box::new(Orientation::Horizontal, 0);
         container.add_css_class("panel");
-        container.set_margin_top(10);
-        container.set_margin_bottom(10);
+        container.set_margin_top(0);
+        container.set_margin_bottom(0);
         container.set_margin_start(10);
         container.set_margin_end(10);
         

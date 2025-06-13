@@ -1,11 +1,15 @@
 use gtk4::prelude::*;
 use gtk4::{Box, Label, Button, Orientation, Image, Popover, Scale, Switch};
-use glib::timeout_add_local;
 use anyhow::Result;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
+use std::fs;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
+use notify::{Watcher, RecursiveMode, Event, EventKind, RecommendedWatcher, Config};
 
 pub struct Sound {
     button: Button,
@@ -135,14 +139,20 @@ impl Sound {
                              &mute_switch_init, &device_name_label_init, audio_info_init);
         });
         
+        // Flag to prevent feedback loops
+        let volume_updating = std::rc::Rc::new(std::cell::RefCell::new(false));
+        let volume_updating_clone = volume_updating.clone();
+        
         // Handle volume scale changes
         let audio_info_scale = audio_info.clone();
         let volume_label_weak = volume_label.downgrade();
         let icon_weak = icon.downgrade();
         let label_weak = label.downgrade();
-        let mute_switch_weak = mute_switch.downgrade();
-        let device_name_label_weak = device_name_label.downgrade();
+        let volume_updating_for_scale = volume_updating.clone();
         volume_scale.connect_value_changed(move |scale| {
+            // Set flag to prevent feedback loop
+            *volume_updating_for_scale.borrow_mut() = true;
+            
             let volume = scale.value() as u32;
             
             // Update volume
@@ -164,21 +174,10 @@ impl Sound {
                 }
             }
             
-            // Schedule an update after a short delay to catch any system changes
-            let icon_weak2 = icon_weak.clone();
-            let label_weak2 = label_weak.clone();
-            let scale_weak = scale.downgrade();
-            let volume_label_weak2 = volume_label_weak.clone();
-            let mute_switch_weak2 = mute_switch_weak.clone();
-            let device_name_label_weak2 = device_name_label_weak.clone();
-            let audio_info_clone = audio_info_scale.clone();
-            
-            glib::timeout_add_local_once(Duration::from_millis(100), move || {
-                if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
-                    (icon_weak2.upgrade(), label_weak2.upgrade(), scale_weak.upgrade(), 
-                     volume_label_weak2.upgrade(), mute_switch_weak2.upgrade(), device_name_label_weak2.upgrade()) {
-                    Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone);
-                }
+            // Clear flag after a short delay
+            let volume_updating_clear = volume_updating_for_scale.clone();
+            glib::timeout_add_local_once(Duration::from_millis(200), move || {
+                *volume_updating_clear.borrow_mut() = false;
             });
         });
         
@@ -187,9 +186,12 @@ impl Sound {
         let icon_weak_mute = icon.downgrade();
         let label_weak_mute = label.downgrade();
         let volume_scale_weak = volume_scale.downgrade();
-        let volume_label_weak_mute = volume_label.downgrade();
-        let device_name_label_weak_mute = device_name_label.downgrade();
-        mute_switch.connect_state_set(move |switch, state| {
+        let mute_updating = std::rc::Rc::new(std::cell::RefCell::new(false));
+        let mute_updating_for_switch = mute_updating.clone();
+        mute_switch.connect_state_set(move |_switch, state| {
+            // Set flag to prevent feedback loop
+            *mute_updating_for_switch.borrow_mut() = true;
+            
             Self::toggle_mute(state);
             
             // Update UI immediately
@@ -211,27 +213,16 @@ impl Sound {
                 }
             }
             
-            // Schedule an update after a short delay
-            let icon_weak2 = icon_weak_mute.clone();
-            let label_weak2 = label_weak_mute.clone();
-            let scale_weak2 = volume_scale_weak.clone();
-            let volume_label_weak2 = volume_label_weak_mute.clone();
-            let mute_switch_weak2 = switch.downgrade();
-            let device_name_label_weak2 = device_name_label_weak_mute.clone();
-            let audio_info_clone = audio_info_mute.clone();
-            
-            glib::timeout_add_local_once(Duration::from_millis(100), move || {
-                if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
-                    (icon_weak2.upgrade(), label_weak2.upgrade(), scale_weak2.upgrade(), 
-                     volume_label_weak2.upgrade(), mute_switch_weak2.upgrade(), device_name_label_weak2.upgrade()) {
-                    Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone);
-                }
+            // Clear flag after a short delay
+            let mute_updating_clear = mute_updating_for_switch.clone();
+            glib::timeout_add_local_once(Duration::from_millis(200), move || {
+                *mute_updating_clear.borrow_mut() = false;
             });
             
             glib::Propagation::Proceed
         });
         
-        // Update every 500ms for more responsive feedback
+        // Always use polling for primary updates (more reliable)
         let icon_weak = icon.downgrade();
         let label_weak = label.downgrade();
         let volume_scale_weak = volume_scale.downgrade();
@@ -239,38 +230,53 @@ impl Sound {
         let mute_switch_weak = mute_switch.downgrade();
         let device_name_label_weak = device_name_label.downgrade();
         let audio_info_clone = audio_info.clone();
+        let volume_updating_for_monitor = volume_updating.clone();
+        let mute_updating_for_monitor = mute_updating.clone();
         
-        timeout_add_local(Duration::from_millis(250), move || {
-            if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
-                (icon_weak.upgrade(), label_weak.upgrade(), volume_scale_weak.upgrade(), 
-                 volume_label_weak.upgrade(), mute_switch_weak.upgrade(), device_name_label_weak.upgrade()) {
-                Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone.clone());
-                
-                // Now schedule the regular updates at 500ms intervals
-                let icon_weak2 = icon.downgrade();
-                let label_weak2 = label.downgrade();
-                let volume_scale_weak2 = scale.downgrade();
-                let volume_label_weak2 = vol_label.downgrade();
-                let mute_switch_weak2 = mute.downgrade();
-                let device_name_label_weak2 = device.downgrade();
-                let audio_info_clone2 = audio_info_clone.clone();
-                
-                timeout_add_local(Duration::from_millis(500), move || {
-                    if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
-                        (icon_weak2.upgrade(), label_weak2.upgrade(), volume_scale_weak2.upgrade(), 
-                         volume_label_weak2.upgrade(), mute_switch_weak2.upgrade(), device_name_label_weak2.upgrade()) {
-                        Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone2.clone());
-                        glib::ControlFlow::Continue
-                    } else {
-                        glib::ControlFlow::Break
-                    }
-                });
-                
-                glib::ControlFlow::Break
-            } else {
-                glib::ControlFlow::Break
+        glib::timeout_add_local(Duration::from_millis(250), move || {
+            // Only update if we're not currently updating from UI controls
+            if !*volume_updating_for_monitor.borrow() && !*mute_updating_for_monitor.borrow() {
+                if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
+                    (icon_weak.upgrade(), label_weak.upgrade(), volume_scale_weak.upgrade(), 
+                     volume_label_weak.upgrade(), mute_switch_weak.upgrade(), device_name_label_weak.upgrade()) {
+                    Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone.clone());
+                }
             }
+            glib::ControlFlow::Continue
         });
+        
+        // Additionally try to set up file system monitoring for faster updates
+        if let Ok(audio_rx) = Self::setup_audio_monitor() {
+            info!("Audio monitoring initialized with file system watcher");
+            
+            let icon_weak2 = icon.downgrade();
+            let label_weak2 = label.downgrade();
+            let volume_scale_weak2 = volume_scale.downgrade();
+            let volume_label_weak2 = volume_label.downgrade();
+            let mute_switch_weak2 = mute_switch.downgrade();
+            let device_name_label_weak2 = device_name_label.downgrade();
+            let audio_info_clone2 = audio_info.clone();
+            let volume_updating2 = volume_updating.clone();
+            let mute_updating2 = mute_updating.clone();
+            
+            // Check for audio updates from file system monitor
+            glib::timeout_add_local(Duration::from_millis(50), move || {
+                // Check if we have any audio updates
+                while let Ok(()) = audio_rx.try_recv() {
+                    // Only update if we're not currently updating from UI controls
+                    if !*volume_updating2.borrow() && !*mute_updating2.borrow() {
+                        if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
+                            (icon_weak2.upgrade(), label_weak2.upgrade(), volume_scale_weak2.upgrade(), 
+                             volume_label_weak2.upgrade(), mute_switch_weak2.upgrade(), device_name_label_weak2.upgrade()) {
+                            Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone2.clone());
+                        }
+                    }
+                }
+                glib::ControlFlow::Continue
+            });
+        } else {
+            info!("File system monitoring not available, using polling only");
+        }
         
         // Show popover on click
         button.connect_clicked(move |_| {
@@ -293,6 +299,83 @@ impl Sound {
         Ok(Self { button })
     }
     
+    fn setup_audio_monitor() -> Result<mpsc::Receiver<()>> {
+        let (tx, rx) = mpsc::channel();
+        
+        thread::spawn(move || {
+            // Create channel for watcher events
+            let (watch_tx, watch_rx) = mpsc::channel();
+            
+            // Try to find PipeWire/PulseAudio runtime directories to monitor
+            let mut paths_to_watch = Vec::new();
+            
+            // Check for PipeWire runtime
+            if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                let pipewire_path = PathBuf::from(&runtime_dir).join("pipewire-0");
+                if pipewire_path.exists() {
+                    paths_to_watch.push(pipewire_path);
+                }
+                
+                // Also check for PulseAudio
+                let pulse_path = PathBuf::from(&runtime_dir).join("pulse");
+                if pulse_path.exists() {
+                    paths_to_watch.push(pulse_path);
+                }
+            }
+            
+            // If no specific audio paths found, monitor /dev/snd for ALSA changes
+            let dev_snd = PathBuf::from("/dev/snd");
+            if dev_snd.exists() && paths_to_watch.is_empty() {
+                paths_to_watch.push(dev_snd);
+            }
+            
+            if paths_to_watch.is_empty() {
+                warn!("No audio paths found to monitor");
+                return;
+            }
+            
+            // Create a watcher
+            let mut watcher = match RecommendedWatcher::new(
+                move |res: Result<Event, notify::Error>| {
+                    if let Ok(event) = res {
+                        let _ = watch_tx.send(event);
+                    }
+                },
+                Config::default(),
+            ) {
+                Ok(w) => w,
+                Err(e) => {
+                    warn!("Failed to create file watcher: {}", e);
+                    return;
+                }
+            };
+            
+            // Watch all audio paths
+            for path in &paths_to_watch {
+                if let Err(e) = watcher.watch(path, RecursiveMode::NonRecursive) {
+                    warn!("Failed to watch audio path {:?}: {}", path, e);
+                } else {
+                    info!("Watching audio path: {:?}", path);
+                }
+            }
+            
+            // Process file change events
+            while let Ok(event) = watch_rx.recv() {
+                match event.kind {
+                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                        // Audio system state might have changed, notify the UI
+                        let _ = tx.send(());
+                    }
+                    _ => {}
+                }
+            }
+            
+            warn!("Audio monitor thread exiting");
+        });
+        
+        Ok(rx)
+    }
+    
     fn update_audio(
         icon: &Image,
         label: &Label,
@@ -304,36 +387,32 @@ impl Sound {
     ) {
         if let Some(info) = Self::get_audio_info() {
             // Update stored info
+            let mut should_update_ui = false;
             if let Ok(mut stored_info) = audio_info.lock() {
+                // Only update UI if values actually changed
+                if stored_info.volume != info.volume || stored_info.muted != info.muted || stored_info.device_name != info.device_name {
+                    should_update_ui = true;
+                }
                 *stored_info = info.clone();
             }
             
-            // Update icon
-            Self::update_icon(icon, info.volume, info.muted);
-            
-            // Update label
-            if info.muted {
-                label.set_text("Muted");
-            } else {
-                label.set_text(&format!("{}%", info.volume));
-            }
-            
-            // Update popover controls
-            scale.set_value(info.volume as f64);
-            volume_label.set_text(&format!("{}%", info.volume));
-            mute_switch.set_active(info.muted);
-            scale.set_sensitive(!info.muted);
-            device_label.set_text(&info.device_name);
-        } else {
-            // If we can't get audio info, at least ensure the UI is in a valid state
-            warn!("Failed to get audio info");
-            if let Ok(stored_info) = audio_info.lock() {
-                Self::update_icon(icon, stored_info.volume, stored_info.muted);
-                if stored_info.muted {
+            if should_update_ui {
+                // Update icon
+                Self::update_icon(icon, info.volume, info.muted);
+                
+                // Update label
+                if info.muted {
                     label.set_text("Muted");
                 } else {
-                    label.set_text(&format!("{}%", stored_info.volume));
+                    label.set_text(&format!("{}%", info.volume));
                 }
+                
+                // Update popover controls
+                scale.set_value(info.volume as f64);
+                volume_label.set_text(&format!("{}%", info.volume));
+                mute_switch.set_active(info.muted);
+                scale.set_sensitive(!info.muted);
+                device_label.set_text(&info.device_name);
             }
         }
     }
@@ -420,77 +499,6 @@ impl Sound {
                     muted,
                     device_name,
                 });
-            }
-        }
-        
-        // Try wpctl with sink ID parsing (older method)
-        if let Ok(status_output) = Command::new("wpctl")
-            .arg("status")
-            .output()
-        {
-            let status_str = String::from_utf8_lossy(&status_output.stdout);
-            
-            // Find the default sink
-            let mut default_sink_id = None;
-            let mut in_sinks_section = false;
-            let mut device_name = "Unknown".to_string();
-            
-            for line in status_str.lines() {
-                if line.contains("Sinks:") {
-                    in_sinks_section = true;
-                    continue;
-                }
-                if in_sinks_section && (line.starts_with(" ├─") || line.starts_with(" └─")) {
-                    // Check if this is the default sink (marked with *)
-                    if line.contains("*") {
-                        info!("Found default sink line: {}", line);
-                        // Extract ID and name
-                        if let Some(id_start) = line.find('.') {
-                            if let Some(id_str) = line[..id_start].split_whitespace().last() {
-                                default_sink_id = id_str.parse::<u32>().ok();
-                                info!("Parsed sink ID: {:?}", default_sink_id);
-                                // Extract device name
-                                if let Some(name_start) = line.find('[') {
-                                    if let Some(name_end) = line.find(']') {
-                                        device_name = line[name_start+1..name_end].to_string();
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
-                if in_sinks_section && !line.starts_with(" ") && !line.is_empty() {
-                    break;
-                }
-            }
-            
-            // Get volume using wpctl
-            if let Some(sink_id) = default_sink_id {
-                if let Ok(volume_output) = Command::new("wpctl")
-                    .args(&["get-volume", &sink_id.to_string()])
-                    .output()
-                {
-                    let volume_str = String::from_utf8_lossy(&volume_output.stdout);
-                    
-                    // Parse volume (format: "Volume: 0.50 [MUTED]" or "Volume: 0.50")
-                    let muted = volume_str.contains("[MUTED]");
-                    let volume = if let Some(vol_str) = volume_str.split(':').nth(1) {
-                        if let Some(vol_val) = vol_str.split_whitespace().next() {
-                            (vol_val.parse::<f32>().unwrap_or(0.0) * 100.0) as u32
-                        } else {
-                            0
-                        }
-                    } else {
-                        0
-                    };
-                    
-                    return Some(AudioInfo {
-                        volume,
-                        muted,
-                        device_name,
-                    });
-                }
             }
         }
         

@@ -51,13 +51,13 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     window.set_anchor(gtk4_layer_shell::Edge::Right, true);
     
     // Set exclusive zone to reserve space (height + padding + margin)
-    window.set_exclusive_zone(config.height + 20 + 5); // 20 for padding (top+bottom), 10 for margin
+    window.set_exclusive_zone(config.height + 5); // 20 for padding (top+bottom), 10 for margin
     
     // Enable keyboard interactivity for the panel
     window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
 
     // Set window properties
-    window.set_height_request(config.height + 20); // Add 20px for top+bottom padding
+    window.set_height_request(config.height); // Add 20px for top+bottom padding
     window.set_margin(gtk4_layer_shell::Edge::Top, 0);
     window.set_margin(gtk4_layer_shell::Edge::Bottom, 0);
     window.set_margin(gtk4_layer_shell::Edge::Left, 0);
