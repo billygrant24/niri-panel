@@ -1,11 +1,13 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch};
+use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch, ScrolledWindow, Entry, Spinner};
 use glib::timeout_add_seconds_local;
 use anyhow::Result;
 use std::process::Command;
 use std::fs;
 use std::path::Path;
 use tracing::{info, warn};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 pub struct Network {
     button: Button,
@@ -35,6 +37,15 @@ struct VpnConnection {
     name: String,
     uuid: String,
     active: bool,
+}
+
+#[derive(Debug, Clone)]
+struct WifiNetwork {
+    ssid: String,
+    signal: u8,
+    secured: bool,
+    connected: bool,
+    bssid: String,
 }
 
 impl Network {
@@ -68,22 +79,28 @@ impl Network {
         popover_box.set_margin_bottom(10);
         popover_box.set_margin_start(10);
         popover_box.set_margin_end(10);
-        popover_box.set_size_request(300, -1);
+        popover_box.set_size_request(350, -1);
         
         popover.set_child(Some(&popover_box));
         
+        // Store scanning state
+        let scanning = Rc::new(RefCell::new(false));
+        
         // Update network status immediately
-        Self::update_network(&icon, &vpn_icon, &label, &popover_box);
+        Self::update_network(&icon, &vpn_icon, &label, &popover_box, scanning.clone());
         
         // Update every 5 seconds
         let icon_weak = icon.downgrade();
         let vpn_icon_weak = vpn_icon.downgrade();
         let label_weak = label.downgrade();
         let popover_box_weak = popover_box.downgrade();
+        let scanning_clone = scanning.clone();
         timeout_add_seconds_local(5, move || {
             if let (Some(icon), Some(vpn_icon), Some(label), Some(popover_box)) = 
                 (icon_weak.upgrade(), vpn_icon_weak.upgrade(), label_weak.upgrade(), popover_box_weak.upgrade()) {
-                Self::update_network(&icon, &vpn_icon, &label, &popover_box);
+                if !*scanning_clone.borrow() {
+                    Self::update_network(&icon, &vpn_icon, &label, &popover_box, scanning_clone.clone());
+                }
                 glib::ControlFlow::Continue
             } else {
                 glib::ControlFlow::Break
@@ -98,7 +115,7 @@ impl Network {
         Ok(Self { button })
     }
     
-    fn update_network(icon: &Image, vpn_icon: &Image, label: &Label, popover_box: &Box) {
+    fn update_network(icon: &Image, vpn_icon: &Image, label: &Label, popover_box: &Box, scanning: Rc<RefCell<bool>>) {
         let info = Self::get_network_info();
         let vpn_connections = Self::get_vpn_connections();
         
@@ -179,6 +196,117 @@ impl Network {
             popover_box.append(&ip_label);
         }
         
+        // WiFi Networks Section (only show for WiFi connections or when disconnected)
+        if info.connection_type == ConnectionType::Wifi || info.connection_type == ConnectionType::Disconnected {
+            // Separator
+            let separator = gtk4::Separator::new(Orientation::Horizontal);
+            separator.set_margin_top(10);
+            separator.set_margin_bottom(10);
+            popover_box.append(&separator);
+            
+            let wifi_header = Box::new(Orientation::Horizontal, 10);
+            
+            let wifi_label = Label::new(Some("WiFi Networks"));
+            wifi_label.set_halign(gtk4::Align::Start);
+            wifi_label.set_hexpand(true);
+            wifi_label.add_css_class("network-section-title");
+            wifi_header.append(&wifi_label);
+            
+            let refresh_button = Button::from_icon_name("view-refresh-symbolic");
+            refresh_button.add_css_class("network-refresh-button");
+            refresh_button.set_tooltip_text(Some("Scan for networks"));
+            
+            let popover_box_weak = popover_box.downgrade();
+            let scanning_for_refresh = scanning.clone();
+            refresh_button.connect_clicked(move |button| {
+                if let Some(popover_box) = popover_box_weak.upgrade() {
+                    *scanning_for_refresh.borrow_mut() = true;
+                    button.set_sensitive(false);
+                    
+                    // Start scan
+                    let _ = Command::new("nmcli")
+                        .args(&["device", "wifi", "rescan"])
+                        .spawn();
+                    
+                    // Show scanning state
+                    if let Some(wifi_list_widget) = popover_box.observe_children().item(popover_box.observe_children().n_items() - 1) {
+                        if let Some(scroll) = wifi_list_widget.downcast_ref::<ScrolledWindow>() {
+                            if let Some(list) = scroll.child().and_then(|w| w.downcast_ref::<ListBox>().cloned()) {
+                                while let Some(child) = list.first_child() {
+                                    list.remove(&child);
+                                }
+                                
+                                let scanning_row = ListBoxRow::new();
+                                let scanning_box = Box::new(Orientation::Horizontal, 10);
+                                scanning_box.set_margin_start(10);
+                                scanning_box.set_margin_end(10);
+                                scanning_box.set_margin_top(20);
+                                scanning_box.set_margin_bottom(20);
+                                scanning_box.set_halign(gtk4::Align::Center);
+                                
+                                let spinner = Spinner::new();
+                                spinner.start();
+                                scanning_box.append(&spinner);
+                                
+                                let scanning_label = Label::new(Some("Scanning for networks..."));
+                                scanning_label.add_css_class("dim-label");
+                                scanning_box.append(&scanning_label);
+                                
+                                scanning_row.set_child(Some(&scanning_box));
+                                list.append(&scanning_row);
+                            }
+                        }
+                    }
+                    
+                    // Wait and update
+                    let popover_box_weak2 = popover_box.downgrade();
+                    let button_weak = button.downgrade();
+                    let scanning_for_timeout = scanning_for_refresh.clone();
+                    glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
+                        *scanning_for_timeout.borrow_mut() = false;
+                        if let (Some(popover_box), Some(button)) = (popover_box_weak2.upgrade(), button_weak.upgrade()) {
+                            button.set_sensitive(true);
+                            Self::update_wifi_list(&popover_box);
+                        }
+                    });
+                }
+            });
+            
+            wifi_header.append(&refresh_button);
+            popover_box.append(&wifi_header);
+            
+            // WiFi list with scroll
+            let wifi_scroll = ScrolledWindow::new();
+            wifi_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+            wifi_scroll.set_min_content_height(100);
+            wifi_scroll.set_max_content_height(300);
+            
+            let wifi_list = ListBox::new();
+            wifi_list.add_css_class("network-wifi-list");
+            wifi_list.set_selection_mode(gtk4::SelectionMode::None);
+            
+            // Get available networks
+            let networks = Self::get_wifi_networks();
+            
+            if networks.is_empty() {
+                let empty_row = ListBoxRow::new();
+                let empty_label = Label::new(Some("No networks found"));
+                empty_label.add_css_class("dim-label");
+                empty_label.set_margin_top(20);
+                empty_label.set_margin_bottom(20);
+                empty_row.set_child(Some(&empty_label));
+                wifi_list.append(&empty_row);
+            } else {
+                for network in networks {
+                    let row = Self::create_wifi_row(&network);
+                    wifi_list.append(&row);
+                }
+            }
+            
+            wifi_scroll.set_child(Some(&wifi_list));
+            popover_box.append(&wifi_scroll);
+        }
+        
         // VPN Section
         if !vpn_connections.is_empty() || info.vpn_active {
             // Separator
@@ -189,7 +317,7 @@ impl Network {
             
             let vpn_label = Label::new(Some("VPN Connections"));
             vpn_label.set_halign(gtk4::Align::Start);
-            vpn_label.add_css_class("network-vpn-title");
+            vpn_label.add_css_class("network-section-title");
             popover_box.append(&vpn_label);
             
             // VPN list
@@ -265,6 +393,300 @@ impl Network {
         }
         
         popover_box.append(&actions_box);
+    }
+    
+    fn update_wifi_list(popover_box: &Box) {
+        // Find the wifi list in the popover
+        for i in 0..popover_box.observe_children().n_items() {
+            if let Some(widget) = popover_box.observe_children().item(i) {
+                if let Some(scroll) = widget.downcast_ref::<ScrolledWindow>() {
+                    if let Some(list) = scroll.child().and_then(|w| w.downcast_ref::<ListBox>().cloned()) {
+                        // Clear existing items
+                        while let Some(child) = list.first_child() {
+                            list.remove(&child);
+                        }
+                        
+                        // Get fresh network list
+                        let networks = Self::get_wifi_networks();
+                        
+                        if networks.is_empty() {
+                            let empty_row = ListBoxRow::new();
+                            let empty_label = Label::new(Some("No networks found"));
+                            empty_label.add_css_class("dim-label");
+                            empty_label.set_margin_top(20);
+                            empty_label.set_margin_bottom(20);
+                            empty_row.set_child(Some(&empty_label));
+                            list.append(&empty_row);
+                        } else {
+                            for network in networks {
+                                let row = Self::create_wifi_row(&network);
+                                list.append(&row);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    fn create_wifi_row(network: &WifiNetwork) -> ListBoxRow {
+        let row = ListBoxRow::new();
+        row.add_css_class("network-wifi-row");
+        
+        let hbox = Box::new(Orientation::Horizontal, 10);
+        hbox.set_margin_start(5);
+        hbox.set_margin_end(5);
+        hbox.set_margin_top(8);
+        hbox.set_margin_bottom(8);
+        
+        // Signal icon
+        let signal_icon = Image::from_icon_name(Self::get_wifi_signal_icon(network.signal));
+        signal_icon.set_pixel_size(16);
+        hbox.append(&signal_icon);
+        
+        // Network name and info
+        let info_box = Box::new(Orientation::Vertical, 2);
+        info_box.set_hexpand(true);
+        
+        let name_label = Label::new(Some(&network.ssid));
+        name_label.set_halign(gtk4::Align::Start);
+        if network.connected {
+            name_label.add_css_class("network-connected");
+        }
+        info_box.append(&name_label);
+        
+        let status_label = if network.connected {
+            Label::new(Some("Connected"))
+        } else {
+            Label::new(Some(&format!("{}%{}", network.signal, if network.secured { " • Secured" } else { "" })))
+        };
+        status_label.set_halign(gtk4::Align::Start);
+        status_label.add_css_class("network-wifi-status");
+        info_box.append(&status_label);
+        
+        hbox.append(&info_box);
+        
+        // Connect/Disconnect button
+        if !network.connected {
+            let connect_button = Button::with_label("Connect");
+            connect_button.add_css_class("network-connect-button");
+            
+            let ssid = network.ssid.clone();
+            let secured = network.secured;
+            connect_button.connect_clicked(move |button| {
+                if secured {
+                    Self::show_password_dialog(&ssid, button);
+                } else {
+                    Self::connect_to_wifi(&ssid, None);
+                }
+            });
+            
+            hbox.append(&connect_button);
+        } else {
+            let disconnect_button = Button::with_label("Disconnect");
+            disconnect_button.add_css_class("network-disconnect-button");
+            
+            let ssid = network.ssid.clone();
+            disconnect_button.connect_clicked(move |_| {
+                Self::disconnect_wifi(&ssid);
+            });
+            
+            hbox.append(&disconnect_button);
+        }
+        
+        row.set_child(Some(&hbox));
+        row
+    }
+    
+    fn show_password_dialog(ssid: &str, button: &Button) {
+        // Create a simple password dialog
+        let dialog = gtk4::Window::new();
+        dialog.set_title(Some(&format!("Connect to {}", ssid)));
+        dialog.set_modal(true);
+        dialog.set_resizable(false);
+        dialog.set_default_size(300, 150);
+        
+        // Find the parent window
+        if let Some(native) = button.native() {
+            if let Some(window) = native.downcast_ref::<gtk4::Window>() {
+                dialog.set_transient_for(Some(window));
+            }
+        }
+        
+        let vbox = Box::new(Orientation::Vertical, 10);
+        vbox.set_margin_top(20);
+        vbox.set_margin_bottom(20);
+        vbox.set_margin_start(20);
+        vbox.set_margin_end(20);
+        
+        let label = Label::new(Some("Enter WiFi password:"));
+        label.set_halign(gtk4::Align::Start);
+        vbox.append(&label);
+        
+        let password_entry = Entry::new();
+        password_entry.set_visibility(false);
+        password_entry.set_placeholder_text(Some("Password"));
+        vbox.append(&password_entry);
+        
+        let button_box = Box::new(Orientation::Horizontal, 10);
+        button_box.set_halign(gtk4::Align::End);
+        button_box.set_margin_top(10);
+        
+        let cancel_button = Button::with_label("Cancel");
+        let connect_button = Button::with_label("Connect");
+        connect_button.add_css_class("suggested-action");
+        
+        button_box.append(&cancel_button);
+        button_box.append(&connect_button);
+        vbox.append(&button_box);
+        
+        dialog.set_child(Some(&vbox));
+        
+        // Handle button clicks
+        let dialog_weak = dialog.downgrade();
+        cancel_button.connect_clicked(move |_| {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.close();
+            }
+        });
+        
+        let dialog_weak2 = dialog.downgrade();
+        let ssid = ssid.to_string();
+        let password_entry_weak = password_entry.downgrade();
+        let ssid_for_connect = ssid.clone();
+        connect_button.connect_clicked(move |_| {
+            if let Some(entry) = password_entry_weak.upgrade() {
+                let password = entry.text();
+                if !password.is_empty() {
+                    Self::connect_to_wifi(&ssid_for_connect, Some(&password));
+                    if let Some(dialog) = dialog_weak2.upgrade() {
+                        dialog.close();
+                    }
+                }
+            }
+        });
+        
+        // Handle Enter key
+        let dialog_weak3 = dialog.downgrade();
+        let ssid_for_enter = ssid.clone();
+        password_entry.connect_activate(move |entry| {
+            let password = entry.text();
+            if !password.is_empty() {
+                Self::connect_to_wifi(&ssid_for_enter, Some(&password));
+                if let Some(dialog) = dialog_weak3.upgrade() {
+                    dialog.close();
+                }
+            }
+        });
+        
+        dialog.present();
+        password_entry.grab_focus();
+    }
+    
+    fn get_wifi_networks() -> Vec<WifiNetwork> {
+        let mut networks = Vec::new();
+        
+        // Get current SSID to mark as connected
+        let current_ssid = if let Ok(output) = Command::new("iwgetid")
+            .arg("-r")
+            .output()
+        {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        } else {
+            String::new()
+        };
+        
+        // Use nmcli to get WiFi networks
+        if let Ok(output) = Command::new("nmcli")
+            .args(&["-t", "-f", "SSID,SIGNAL,SECURITY,BSSID", "device", "wifi", "list"])
+            .output()
+        {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let mut seen_ssids = std::collections::HashSet::new();
+            
+            for line in output_str.lines() {
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() >= 4 {
+                    let ssid = parts[0].to_string();
+                    
+                    // Skip empty SSIDs and duplicates
+                    if ssid.is_empty() || !seen_ssids.insert(ssid.clone()) {
+                        continue;
+                    }
+                    
+                    if let Ok(signal) = parts[1].parse::<u8>() {
+                        let secured = !parts[2].is_empty() && parts[2] != "--";
+                        let connected = ssid == current_ssid;
+                        let bssid = parts[3].to_string();
+                        
+                        networks.push(WifiNetwork {
+                            ssid,
+                            signal,
+                            secured,
+                            connected,
+                            bssid,
+                        });
+                    }
+                }
+            }
+            
+            // Sort by signal strength (connected first, then by signal)
+            networks.sort_by(|a, b| {
+                match (a.connected, b.connected) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => b.signal.cmp(&a.signal),
+                }
+            });
+        }
+        
+        networks
+    }
+    
+    fn get_wifi_signal_icon(signal: u8) -> &'static str {
+        match signal {
+            0..=25 => "network-wireless-signal-weak-symbolic",
+            26..=50 => "network-wireless-signal-ok-symbolic",
+            51..=75 => "network-wireless-signal-good-symbolic",
+            _ => "network-wireless-signal-excellent-symbolic",
+        }
+    }
+    
+    fn connect_to_wifi(ssid: &str, password: Option<&str>) {
+        let mut cmd = Command::new("nmcli");
+        cmd.args(&["device", "wifi", "connect", ssid]);
+        
+        if let Some(pwd) = password {
+            cmd.args(&["password", pwd]);
+        }
+        
+        match cmd.output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to connect to WiFi: {}", String::from_utf8_lossy(&output.stderr));
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute nmcli: {}", e);
+            }
+        }
+    }
+    
+    fn disconnect_wifi(ssid: &str) {
+        match Command::new("nmcli")
+            .args(&["connection", "down", ssid])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to disconnect WiFi: {}", String::from_utf8_lossy(&output.stderr));
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute nmcli: {}", e);
+            }
+        }
     }
     
     fn get_network_info() -> NetworkInfo {

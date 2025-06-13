@@ -901,6 +901,7 @@ dependencies = [
  "chrono",
  "dirs",
  "futures",
+ "gdk4",
  "glib",
  "gtk4",
  "gtk4-layer-shell",

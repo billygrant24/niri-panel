@@ -46,7 +46,7 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     // Initialize layer shell
     window.init_layer_shell();
     window.set_layer(Layer::Top);
-    window.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
+    window.set_anchor(gtk4_layer_shell::Edge::Top, true);
     window.set_anchor(gtk4_layer_shell::Edge::Left, true);
     window.set_anchor(gtk4_layer_shell::Edge::Right, true);
     
@@ -55,7 +55,7 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     
     // Enable keyboard interactivity for the panel
     window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
-    
+
     // Set window properties
     window.set_height_request(config.height + 20); // Add 20px for top+bottom padding
     window.set_margin(gtk4_layer_shell::Edge::Top, 0);

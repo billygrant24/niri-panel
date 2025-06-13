@@ -1,5 +1,6 @@
 use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, SearchEntry, ListBox, ListBoxRow, Label, ScrolledWindow};
+use gtk4::{Button, Image, Popover, Box, Orientation, SearchEntry, ListBox, ListBoxRow, Label, ScrolledWindow, EventControllerKey};
+use gtk4::gdk;
 use anyhow::Result;
 use std::process::Command;
 use std::fs;
@@ -143,6 +144,21 @@ impl Launcher {
                 }
             }
         });
+
+        // Handle Escape key in search entry to close popover
+        let escape_controller = gtk4::EventControllerKey::new();
+        let popover_weak_escape = popover.downgrade();
+        escape_controller.connect_key_pressed(move |_, key, _, _| {
+            if key == gtk4::gdk::Key::Escape {
+                if let Some(popover) = popover_weak_escape.upgrade() {
+                    popover.popdown();
+                }
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        search_entry.add_controller(escape_controller);
         
         // Show popover on click
         let search_entry_weak = search_entry.downgrade();
