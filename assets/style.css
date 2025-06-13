@@ -592,6 +592,71 @@ image {
     font-style: italic;
 }
 
+/* Battery popover */
+.battery-popover {
+    min-width: 300px;
+}
+
+.battery-status-box {
+    margin-bottom: 5px;
+}
+
+.battery-status-label {
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.battery-time-label {
+    font-size: 12px;
+    color: #7c818c;
+}
+
+.battery-section-label {
+    font-weight: 500;
+    font-size: 12px;
+    opacity: 0.7;
+    margin-bottom: 5px;
+}
+
+.battery-stat-title {
+    font-size: 12px;
+    color: #7c818c;
+}
+
+.battery-stat-value {
+    font-size: 12px;
+    color: #d3dae3;
+    font-family: monospace;
+}
+
+.brightness-slider {
+    color: #5294e2;
+}
+
+.brightness-slider trough {
+    background-color: #2b2e3b;
+    border-radius: 3px;
+    min-height: 6px;
+}
+
+.brightness-slider highlight {
+    background-color: #5294e2;
+    border-radius: 3px;
+}
+
+.brightness-slider slider {
+    background-color: #d3dae3;
+    border-radius: 50%;
+    min-width: 12px;
+    min-height: 12px;
+    border: 2px solid #383c4a;
+}
+
+.brightness-label {
+    font-size: 12px;
+    font-family: monospace;
+}
+
 /* Clock */
 .clock {
     background: none;

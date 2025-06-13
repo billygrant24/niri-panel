@@ -1,10 +1,11 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow};
+use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Scale};
 use glib::timeout_add_seconds_local;
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 use tracing::{info, warn};
 
 pub struct Battery {
@@ -25,6 +26,14 @@ enum PowerProfile {
     PowerSaver,
     Balanced,
     Performance,
+}
+
+#[derive(Debug)]
+struct SystemStats {
+    uptime: String,
+    cpu_usage: f32,
+    temperature: Option<f32>,
+    power_consumption: Option<f32>,
 }
 
 impl PowerProfile {
@@ -87,7 +96,7 @@ impl Battery {
         popover_box.set_margin_bottom(10);
         popover_box.set_margin_start(10);
         popover_box.set_margin_end(10);
-        popover_box.set_size_request(250, -1);
+        popover_box.set_size_request(300, -1);
         
         // Battery status section
         let status_box = Box::new(Orientation::Vertical, 5);
@@ -105,13 +114,81 @@ impl Battery {
         
         popover_box.append(&status_box);
         
-        // Separator
+        // System stats section
+        let stats_separator = gtk4::Separator::new(Orientation::Horizontal);
+        stats_separator.set_margin_top(5);
+        stats_separator.set_margin_bottom(5);
+        popover_box.append(&stats_separator);
+        
+        let stats_label = Label::new(Some("System Status"));
+        stats_label.set_halign(gtk4::Align::Start);
+        stats_label.add_css_class("battery-section-label");
+        popover_box.append(&stats_label);
+        
+        // Stats labels
+        let uptime_label = Self::create_stat_label("Uptime", "0m");
+        let cpu_label = Self::create_stat_label("CPU Usage", "0%");
+        let temp_label = Self::create_stat_label("Temperature", "N/A");
+        let power_label = Self::create_stat_label("Power Draw", "N/A");
+        
+        popover_box.append(&uptime_label);
+        popover_box.append(&cpu_label);
+        popover_box.append(&temp_label);
+        popover_box.append(&power_label);
+        
+        // Brightness control section
+        let brightness_separator = gtk4::Separator::new(Orientation::Horizontal);
+        brightness_separator.set_margin_top(5);
+        brightness_separator.set_margin_bottom(5);
+        popover_box.append(&brightness_separator);
+        
+        let brightness_label = Label::new(Some("Screen Brightness"));
+        brightness_label.set_halign(gtk4::Align::Start);
+        brightness_label.add_css_class("battery-section-label");
+        popover_box.append(&brightness_label);
+        
+        let brightness_box = Box::new(Orientation::Horizontal, 10);
+        
+        let brightness_icon = Image::from_icon_name("display-brightness-symbolic");
+        brightness_box.append(&brightness_icon);
+        
+        let brightness_scale = Scale::with_range(Orientation::Horizontal, 0.0, 100.0, 1.0);
+        brightness_scale.set_hexpand(true);
+        brightness_scale.set_draw_value(false);
+        brightness_scale.add_css_class("brightness-slider");
+        
+        let brightness_value_label = Label::new(Some("50%"));
+        brightness_value_label.set_width_chars(4);
+        brightness_value_label.add_css_class("brightness-label");
+        
+        brightness_box.append(&brightness_scale);
+        brightness_box.append(&brightness_value_label);
+        
+        popover_box.append(&brightness_box);
+        
+        // Set initial brightness
+        if let Some(current_brightness) = Self::get_brightness() {
+            brightness_scale.set_value(current_brightness as f64);
+            brightness_value_label.set_text(&format!("{}%", current_brightness));
+        }
+        
+        // Handle brightness changes
+        let brightness_value_weak = brightness_value_label.downgrade();
+        brightness_scale.connect_value_changed(move |scale| {
+            let value = scale.value() as u32;
+            Self::set_brightness(value);
+            
+            if let Some(label) = brightness_value_weak.upgrade() {
+                label.set_text(&format!("{}%", value));
+            }
+        });
+        
+        // Power profiles section
         let separator = gtk4::Separator::new(Orientation::Horizontal);
         separator.set_margin_top(5);
         separator.set_margin_bottom(5);
         popover_box.append(&separator);
         
-        // Power profiles section
         let profiles_label = Label::new(Some("Power Profile"));
         profiles_label.set_halign(gtk4::Align::Start);
         profiles_label.add_css_class("battery-section-label");
@@ -197,19 +274,58 @@ impl Battery {
         popover.set_child(Some(&popover_box));
         
         // Update battery status immediately
-        Self::update_battery(&icon, &label, &status_label, &time_label, &profiles_list);
+        Self::update_battery(&icon, &label, &status_label, &time_label, &profiles_list,
+                           &uptime_label, &cpu_label, &temp_label, &power_label);
         
-        // Update every 30 seconds
+        // Update every 30 seconds for battery, every 2 seconds for stats when visible
         let icon_weak = icon.downgrade();
         let label_weak = label.downgrade();
         let status_label_weak = status_label.downgrade();
         let time_label_weak = time_label.downgrade();
         let profiles_list_weak = profiles_list.downgrade();
+        let uptime_weak = uptime_label.downgrade();
+        let cpu_weak = cpu_label.downgrade();
+        let temp_weak = temp_label.downgrade();
+        let power_weak = power_label.downgrade();
+        let popover_weak = popover.downgrade();
+        
+        // Fast update timer (2s) for system stats when popover is visible
+        timeout_add_seconds_local(2, move || {
+            if let Some(popover) = popover_weak.upgrade() {
+                if popover.is_visible() {
+                    if let (Some(icon), Some(label), Some(status), Some(time), Some(profiles),
+                            Some(uptime), Some(cpu), Some(temp), Some(power)) = 
+                        (icon_weak.upgrade(), label_weak.upgrade(), status_label_weak.upgrade(), 
+                         time_label_weak.upgrade(), profiles_list_weak.upgrade(),
+                         uptime_weak.upgrade(), cpu_weak.upgrade(), temp_weak.upgrade(), power_weak.upgrade()) {
+                        Self::update_battery(&icon, &label, &status, &time, &profiles,
+                                           &uptime, &cpu, &temp, &power);
+                    }
+                }
+                glib::ControlFlow::Continue
+            } else {
+                glib::ControlFlow::Break
+            }
+        });
+        
+        // Slow update timer (30s) for battery icon/label
+        let icon_weak2 = icon.downgrade();
+        let label_weak2 = label.downgrade();
         timeout_add_seconds_local(30, move || {
-            if let (Some(icon), Some(label), Some(status), Some(time), Some(profiles)) = 
-                (icon_weak.upgrade(), label_weak.upgrade(), status_label_weak.upgrade(), 
-                 time_label_weak.upgrade(), profiles_list_weak.upgrade()) {
-                Self::update_battery(&icon, &label, &status, &time, &profiles);
+            if let (Some(icon), Some(label)) = (icon_weak2.upgrade(), label_weak2.upgrade()) {
+                if let Some(info) = Self::get_battery_info() {
+                    // Update icon and label
+                    let icon_name = Self::get_battery_icon_name(&info);
+                    icon.set_from_icon_name(Some(&icon_name));
+                    label.set_text(&format!("{}%", info.percentage));
+                    
+                    // Update CSS class for low battery
+                    if info.percentage <= 20 && !info.charging {
+                        label.add_css_class("battery-low");
+                    } else {
+                        label.remove_css_class("battery-low");
+                    }
+                }
                 glib::ControlFlow::Continue
             } else {
                 glib::ControlFlow::Break
@@ -226,7 +342,27 @@ impl Battery {
         Ok(Self { button })
     }
     
-    fn update_battery(icon: &Image, label: &Label, status_label: &Label, time_label: &Label, profiles_list: &ListBox) {
+    fn create_stat_label(title: &str, initial_value: &str) -> Box {
+        let hbox = Box::new(Orientation::Horizontal, 0);
+        
+        let title_label = Label::new(Some(title));
+        title_label.add_css_class("battery-stat-title");
+        title_label.set_halign(gtk4::Align::Start);
+        title_label.set_hexpand(true);
+        
+        let value_label = Label::new(Some(initial_value));
+        value_label.add_css_class("battery-stat-value");
+        value_label.set_halign(gtk4::Align::End);
+        
+        hbox.append(&title_label);
+        hbox.append(&value_label);
+        
+        hbox
+    }
+    
+    fn update_battery(icon: &Image, label: &Label, status_label: &Label, time_label: &Label, 
+                     profiles_list: &ListBox, uptime_box: &Box, cpu_box: &Box, 
+                     temp_box: &Box, power_box: &Box) {
         if let Some(info) = Self::get_battery_info() {
             // Update icon based on battery level and charging status
             let icon_name = Self::get_battery_icon_name(&info);
@@ -270,8 +406,239 @@ impl Battery {
             time_label.set_visible(false);
         }
         
+        // Update system stats
+        let stats = Self::get_system_stats();
+        
+        // Update uptime
+        if let Some(value_label) = uptime_box.last_child() {
+            if let Some(label) = value_label.downcast_ref::<Label>() {
+                label.set_text(&stats.uptime);
+            }
+        }
+        
+        // Update CPU
+        if let Some(value_label) = cpu_box.last_child() {
+            if let Some(label) = value_label.downcast_ref::<Label>() {
+                label.set_text(&format!("{:.1}%", stats.cpu_usage));
+            }
+        }
+        
+        // Update temperature
+        if let Some(value_label) = temp_box.last_child() {
+            if let Some(label) = value_label.downcast_ref::<Label>() {
+                if let Some(temp) = stats.temperature {
+                    label.set_text(&format!("{:.1}°C", temp));
+                } else {
+                    label.set_text("N/A");
+                }
+            }
+        }
+        
+        // Update power consumption
+        if let Some(value_label) = power_box.last_child() {
+            if let Some(label) = value_label.downcast_ref::<Label>() {
+                if let Some(power) = stats.power_consumption {
+                    label.set_text(&format!("{:.1}W", power));
+                } else {
+                    label.set_text("N/A");
+                }
+            }
+        }
+        
         // Update power profile selection
         Self::update_profile_selection(profiles_list);
+    }
+    
+    fn get_system_stats() -> SystemStats {
+        let mut stats = SystemStats {
+            uptime: "Unknown".to_string(),
+            cpu_usage: 0.0,
+            temperature: None,
+            power_consumption: None,
+        };
+        
+        // Get uptime
+        if let Ok(uptime_content) = fs::read_to_string("/proc/uptime") {
+            if let Some(uptime_str) = uptime_content.split_whitespace().next() {
+                if let Ok(uptime_secs) = uptime_str.parse::<f64>() {
+                    let days = (uptime_secs / 86400.0) as u64;
+                    let hours = ((uptime_secs % 86400.0) / 3600.0) as u64;
+                    let minutes = ((uptime_secs % 3600.0) / 60.0) as u64;
+                    
+                    if days > 0 {
+                        stats.uptime = format!("{}d {}h {}m", days, hours, minutes);
+                    } else if hours > 0 {
+                        stats.uptime = format!("{}h {}m", hours, minutes);
+                    } else {
+                        stats.uptime = format!("{}m", minutes);
+                    }
+                }
+            }
+        }
+        
+        // Get CPU usage (simple average from /proc/stat)
+        if let Ok(stat_content) = fs::read_to_string("/proc/stat") {
+            if let Some(cpu_line) = stat_content.lines().next() {
+                let values: Vec<u64> = cpu_line
+                    .split_whitespace()
+                    .skip(1)
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                
+                if values.len() >= 4 {
+                    let idle = values[3];
+                    let total: u64 = values.iter().sum();
+                    if total > 0 {
+                        stats.cpu_usage = ((total - idle) as f32 / total as f32) * 100.0;
+                    }
+                }
+            }
+        }
+        
+        // Get temperature from thermal zones
+        let thermal_zone_path = Path::new("/sys/class/thermal");
+        if thermal_zone_path.exists() {
+            let mut max_temp: Option<f32> = None;
+            
+            if let Ok(entries) = fs::read_dir(thermal_zone_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.starts_with("thermal_zone"))
+                        .unwrap_or(false)
+                    {
+                        let temp_path = path.join("temp");
+                        if let Ok(temp_str) = fs::read_to_string(&temp_path) {
+                            if let Ok(temp) = temp_str.trim().parse::<f32>() {
+                                let temp_celsius = temp / 1000.0;
+                                max_temp = Some(max_temp.unwrap_or(0.0).max(temp_celsius));
+                            }
+                        }
+                    }
+                }
+            }
+            
+            stats.temperature = max_temp;
+        }
+        
+        // Get power consumption from battery
+        let power_supply_path = Path::new("/sys/class/power_supply");
+        if power_supply_path.exists() {
+            if let Ok(entries) = fs::read_dir(power_supply_path) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_str().unwrap_or("");
+                    
+                    if name_str.starts_with("BAT") {
+                        let bat_path = entry.path();
+                        
+                        // Try to read power_now (in microwatts)
+                        let power_now_path = bat_path.join("power_now");
+                        if let Ok(power_str) = fs::read_to_string(&power_now_path) {
+                            if let Ok(power_uw) = power_str.trim().parse::<f32>() {
+                                stats.power_consumption = Some(power_uw / 1_000_000.0);
+                                break;
+                            }
+                        }
+                        
+                        // Fallback: calculate from current and voltage
+                        let current_now_path = bat_path.join("current_now");
+                        let voltage_now_path = bat_path.join("voltage_now");
+                        
+                        if let (Ok(current_str), Ok(voltage_str)) = (
+                            fs::read_to_string(&current_now_path),
+                            fs::read_to_string(&voltage_now_path)
+                        ) {
+                            if let (Ok(current_ua), Ok(voltage_uv)) = (
+                                current_str.trim().parse::<f32>(),
+                                voltage_str.trim().parse::<f32>()
+                            ) {
+                                let power_w = (current_ua * voltage_uv) / 1_000_000_000_000.0;
+                                stats.power_consumption = Some(power_w);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stats
+    }
+    
+    fn get_brightness() -> Option<u32> {
+        // Try using brightnessctl first
+        if let Ok(output) = Command::new("brightnessctl")
+            .args(&["get"])
+            .output()
+        {
+            if let Ok(current) = String::from_utf8_lossy(&output.stdout).trim().parse::<u32>() {
+                // Get max brightness
+                if let Ok(max_output) = Command::new("brightnessctl")
+                    .args(&["max"])
+                    .output()
+                {
+                    if let Ok(max) = String::from_utf8_lossy(&max_output.stdout).trim().parse::<u32>() {
+                        return Some((current * 100) / max);
+                    }
+                }
+            }
+        }
+        
+        // Fallback to sysfs
+        let backlight_path = Path::new("/sys/class/backlight");
+        if backlight_path.exists() {
+            if let Ok(entries) = fs::read_dir(backlight_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let brightness_path = path.join("brightness");
+                    let max_brightness_path = path.join("max_brightness");
+                    
+                    if let (Ok(brightness_str), Ok(max_str)) = (
+                        fs::read_to_string(&brightness_path),
+                        fs::read_to_string(&max_brightness_path)
+                    ) {
+                        if let (Ok(brightness), Ok(max)) = (
+                            brightness_str.trim().parse::<u32>(),
+                            max_str.trim().parse::<u32>()
+                        ) {
+                            if max > 0 {
+                                return Some((brightness * 100) / max);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+    
+    fn set_brightness(percentage: u32) {
+        // Try using brightnessctl first
+        let _ = Command::new("brightnessctl")
+            .args(&["set", &format!("{}%", percentage)])
+            .spawn();
+        
+        // Fallback to sysfs (requires permissions)
+        let backlight_path = Path::new("/sys/class/backlight");
+        if backlight_path.exists() {
+            if let Ok(entries) = fs::read_dir(backlight_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let max_brightness_path = path.join("max_brightness");
+                    let brightness_path = path.join("brightness");
+                    
+                    if let Ok(max_str) = fs::read_to_string(&max_brightness_path) {
+                        if let Ok(max) = max_str.trim().parse::<u32>() {
+                            let new_brightness = (max * percentage) / 100;
+                            let _ = fs::write(&brightness_path, new_brightness.to_string());
+                        }
+                    }
+                }
+            }
+        }
     }
     
     fn check_power_profiles_daemon() -> bool {

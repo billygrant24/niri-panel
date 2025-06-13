@@ -4,7 +4,6 @@ use anyhow::Result;
 use std::process::Command;
 use tracing::{info, warn};
 use serde_json::Value;
-use std::collections::HashSet;
 
 pub struct Workspaces {
     container: Box,
