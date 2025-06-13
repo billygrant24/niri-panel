@@ -3,9 +3,13 @@ use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow,
 use glib::timeout_add_seconds_local;
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use tracing::warn;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+use tracing::{warn, info};
+use notify::{Watcher, RecursiveMode, Event, EventKind, RecommendedWatcher, Config};
 
 pub struct Battery {
     button: Button,
@@ -171,16 +175,54 @@ impl Battery {
             brightness_value_label.set_text(&format!("{}%", current_brightness));
         }
         
-        // Handle brightness changes
+        // Handle brightness changes from the slider
         let brightness_value_weak = brightness_value_label.downgrade();
+        let brightness_updating = std::rc::Rc::new(std::cell::RefCell::new(false));
+        let brightness_updating_clone = brightness_updating.clone();
         brightness_scale.connect_value_changed(move |scale| {
+            // Set flag to prevent feedback loop
+            *brightness_updating_clone.borrow_mut() = true;
+            
             let value = scale.value() as u32;
             Self::set_brightness(value);
             
             if let Some(label) = brightness_value_weak.upgrade() {
                 label.set_text(&format!("{}%", value));
             }
+            
+            // Clear flag after a short delay
+            let brightness_updating_clear = brightness_updating_clone.clone();
+            glib::timeout_add_local_once(Duration::from_millis(100), move || {
+                *brightness_updating_clear.borrow_mut() = false;
+            });
         });
+        
+        // Set up brightness monitoring using notify
+        let brightness_scale_weak = brightness_scale.downgrade();
+        let brightness_label_weak = brightness_value_label.downgrade();
+        let brightness_updating_for_monitor = brightness_updating.clone();
+        
+        if let Ok(brightness_rx) = Self::setup_brightness_monitor() {
+            info!("Brightness monitoring initialized");
+            
+            // Spawn a timeout to check for brightness changes
+            glib::timeout_add_local(Duration::from_millis(50), move || {
+                // Check if we have any brightness updates
+                while let Ok(brightness) = brightness_rx.try_recv() {
+                    // Only update if we're not currently updating from the slider
+                    if !*brightness_updating_for_monitor.borrow() {
+                        if let (Some(scale), Some(label)) = 
+                            (brightness_scale_weak.upgrade(), brightness_label_weak.upgrade()) {
+                            scale.set_value(brightness as f64);
+                            label.set_text(&format!("{}%", brightness));
+                        }
+                    }
+                }
+                glib::ControlFlow::Continue
+            });
+        } else {
+            warn!("Failed to set up brightness monitoring");
+        }
         
         // Power profiles section
         let separator = gtk4::Separator::new(Orientation::Horizontal);
@@ -236,7 +278,6 @@ impl Battery {
             }
             
             // Handle profile selection
-            let popover_weak = popover.downgrade();
             profiles_list.connect_row_activated(move |list, row| {
                 let profile_name = row.widget_name();
                 if let Some(profile) = PowerProfile::from_string(&profile_name) {
@@ -244,13 +285,6 @@ impl Battery {
                     
                     // Update UI to show selected profile
                     Self::update_profile_selection(list);
-                    
-                    // Close popover after a short delay
-                    if let Some(popover) = popover_weak.upgrade() {
-                        glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
-                            popover.popdown();
-                        });
-                    }
                 }
             });
             
@@ -339,6 +373,117 @@ impl Battery {
         });
         
         Ok(Self { button })
+    }
+    
+    fn setup_brightness_monitor() -> Result<mpsc::Receiver<u32>> {
+        let (tx, rx) = mpsc::channel();
+        
+        // Find brightness file path
+        let brightness_path = Self::find_brightness_file()
+            .ok_or_else(|| anyhow::anyhow!("No brightness file found"))?;
+        
+        // Get parent directory for max_brightness
+        let backlight_dir = brightness_path.parent()
+            .ok_or_else(|| anyhow::anyhow!("Invalid brightness path"))?;
+        
+        // Read max brightness once
+        let max_brightness = Self::read_max_brightness(backlight_dir);
+        
+        // Clone paths for the thread
+        let brightness_path_clone = brightness_path.clone();
+        let backlight_dir_clone = backlight_dir.to_path_buf();
+        
+        thread::spawn(move || {
+            // Create channel for watcher events
+            let (watch_tx, watch_rx) = mpsc::channel();
+            
+            // Create a watcher with default config
+            let mut watcher = match RecommendedWatcher::new(
+                move |res: Result<Event, notify::Error>| {
+                    if let Ok(event) = res {
+                        let _ = watch_tx.send(event);
+                    }
+                },
+                Config::default(),
+            ) {
+                Ok(w) => w,
+                Err(e) => {
+                    warn!("Failed to create file watcher: {}", e);
+                    return;
+                }
+            };
+            
+            // Watch the brightness file
+            if let Err(e) = watcher.watch(&brightness_path_clone, RecursiveMode::NonRecursive) {
+                warn!("Failed to watch brightness file: {}", e);
+                return;
+            }
+            
+            info!("Watching brightness file: {:?}", brightness_path_clone);
+            
+            // Also watch max_brightness in case it changes
+            let max_brightness_path = backlight_dir_clone.join("max_brightness");
+            let _ = watcher.watch(&max_brightness_path, RecursiveMode::NonRecursive);
+            
+            let mut current_max = max_brightness;
+            
+            // Process file change events
+            while let Ok(event) = watch_rx.recv() {
+                match event.kind {
+                    EventKind::Modify(_) => {
+                        // Check which file was modified
+                        for path in &event.paths {
+                            if path.file_name() == Some(std::ffi::OsStr::new("max_brightness")) {
+                                // Max brightness changed, re-read it
+                                if let Ok(content) = fs::read_to_string(path) {
+                                    if let Ok(new_max) = content.trim().parse::<u32>() {
+                                        current_max = new_max;
+                                        info!("Max brightness updated to: {}", current_max);
+                                    }
+                                }
+                            } else if path == &brightness_path_clone {
+                                // Brightness changed
+                                if let Ok(content) = fs::read_to_string(path) {
+                                    if let Ok(brightness) = content.trim().parse::<u32>() {
+                                        let percentage = if current_max > 0 {
+                                            (brightness * 100) / current_max
+                                        } else {
+                                            0
+                                        };
+                                        let _ = tx.send(percentage);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
+            warn!("Brightness monitor thread exiting");
+        });
+        
+        Ok(rx)
+    }
+    
+    fn find_brightness_file() -> Option<PathBuf> {
+        let backlight_dir = Path::new("/sys/class/backlight");
+        if let Ok(entries) = fs::read_dir(backlight_dir) {
+            for entry in entries.flatten() {
+                let brightness_path = entry.path().join("brightness");
+                if brightness_path.exists() {
+                    return Some(brightness_path);
+                }
+            }
+        }
+        None
+    }
+    
+    fn read_max_brightness(backlight_path: &Path) -> u32 {
+        fs::read_to_string(backlight_path.join("max_brightness"))
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(100)
     }
     
     fn create_stat_label(title: &str, initial_value: &str) -> Box {

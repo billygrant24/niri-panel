@@ -18,6 +18,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 dirs = "5.0"
 regex = "1.10"
+notify = "6.1"
 
 # For Niri IPC
 async-stream = "0.3"
