@@ -1,6 +1,9 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Orientation};
+use gtk4::{Box, Orientation, ApplicationWindow};
+use gtk4::glib::WeakRef;
 use anyhow::Result;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use crate::config::PanelConfig;
 use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search, Overview};
@@ -11,7 +14,11 @@ pub struct Panel {
 }
 
 impl Panel {
-    pub fn new(config: PanelConfig) -> Result<Self> {
+    pub fn new(
+        config: PanelConfig, 
+        window_weak: WeakRef<ApplicationWindow>,
+        active_popovers: Rc<RefCell<i32>>
+    ) -> Result<Self> {
         let container = Box::new(Orientation::Horizontal, 0);
         container.add_css_class("panel");
         container.set_margin_top(0);
@@ -37,54 +44,54 @@ impl Panel {
         right_box.set_halign(gtk4::Align::End);
         right_box.set_hexpand(false);
         
-        // Add widgets
+        // Add widgets with keyboard mode management where needed
         let overview = Overview::new()?;
         left_box.append(overview.widget());
 
         if config.show_launcher {
-            let launcher = Launcher::new()?;
+            let launcher = Launcher::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(launcher.widget());
         }
         
-        if config.show_places {
-            let places = Places::new()?;
-            left_box.append(places.widget());
-        }
+        // if config.show_places {
+        //     let places = Places::new(window_weak.clone(), active_popovers.clone())?;
+        //     left_box.append(places.widget());
+        // }
         
-        if config.show_search {
-            let search = Search::new()?;
-            left_box.append(search.widget());
-        }
+        // if config.show_search {
+        //     let search = Search::new(window_weak.clone(), active_popovers.clone())?;
+        //     left_box.append(search.widget());
+        // }
         
-        if config.show_workspaces {
-            let workspaces = Workspaces::new()?;
-            left_box.append(workspaces.widget());
-        }
+        // if config.show_workspaces {
+        //     let workspaces = Workspaces::new()?;
+        //     left_box.append(workspaces.widget());
+        // }
         
-        if config.show_sound {
-            let sound = Sound::new()?;
-            right_box.append(sound.widget());
-        }
+        // if config.show_sound {
+        //     let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
+        //     right_box.append(sound.widget());
+        // }
         
-        if config.show_network {
-            let network = Network::new()?;
-            right_box.append(network.widget());
-        }
+        // if config.show_network {
+        //     let network = Network::new(window_weak.clone(), active_popovers.clone())?;
+        //     right_box.append(network.widget());
+        // }
         
-        if config.show_battery {
-            let battery = Battery::new()?;
-            right_box.append(battery.widget());
-        }
+        // if config.show_battery {
+        //     let battery = Battery::new(window_weak.clone(), active_popovers.clone())?;
+        //     right_box.append(battery.widget());
+        // }
         
-        if config.show_clock {
-            let clock = Clock::new(&config.clock_format)?;
-            right_box.append(clock.widget());
-        }
+        // if config.show_clock {
+        //     let clock = Clock::new(&config.clock_format, window_weak.clone(), active_popovers.clone())?;
+        //     right_box.append(clock.widget());
+        // }
         
-        if config.show_power {
-            let power = Power::new()?;
-            right_box.append(power.widget());
-        }
+        // if config.show_power {
+        //     let power = Power::new(window_weak.clone(), active_popovers.clone())?;
+        //     right_box.append(power.widget());
+        // }
         
         // Pack everything
         container.append(&left_box);

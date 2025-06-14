@@ -1,10 +1,14 @@
 use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, SearchEntry, ListBox, ListBoxRow, Label, ScrolledWindow};
+use gtk4::{Button, Image, Popover, Box, Orientation, SearchEntry, ListBox, ListBoxRow, Label, ScrolledWindow, ApplicationWindow};
+use gtk4_layer_shell::{LayerShell};
+use gtk4::glib::WeakRef;
 use anyhow::Result;
 use std::process::Command;
 use std::fs;
 use std::path::Path;
 use tracing::{warn, info};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 pub struct Launcher {
     button: Button,
@@ -19,7 +23,10 @@ struct AppInfo {
 }
 
 impl Launcher {
-    pub fn new() -> Result<Self> {
+    pub fn new(
+        window_weak: WeakRef<ApplicationWindow>,
+        active_popovers: Rc<RefCell<i32>>
+    ) -> Result<Self> {
         let button = Button::new();
         button.add_css_class("launcher");
         
@@ -55,6 +62,34 @@ impl Launcher {
         popover.add_css_class("launcher-popover");
         popover.set_autohide(true);
         popover.set_has_arrow(false);
+        
+        // Handle popover show event - enable keyboard mode
+        let window_weak_show = window_weak.clone();
+        let active_popovers_show = active_popovers.clone();
+        popover.connect_show(move |_| {
+            *active_popovers_show.borrow_mut() += 1;
+            if let Some(window) = window_weak_show.upgrade() {
+                window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
+                info!("Launcher popover shown - keyboard mode set to OnDemand (active popovers: {})", 
+                      *active_popovers_show.borrow());
+            }
+        });
+        
+        // Handle popover hide event - disable keyboard mode if no other popovers
+        let window_weak_hide = window_weak.clone();
+        let active_popovers_hide = active_popovers.clone();
+        popover.connect_hide(move |_| {
+            *active_popovers_hide.borrow_mut() -= 1;
+            let count = *active_popovers_hide.borrow();
+            if count == 0 {
+                if let Some(window) = window_weak_hide.upgrade() {
+                    window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
+                    info!("Launcher popover hidden - keyboard mode set to None");
+                }
+            } else {
+                info!("Launcher popover hidden - keeping keyboard mode (active popovers: {})", count);
+            }
+        });
         
         let popover_box = Box::new(Orientation::Vertical, 10);
         popover_box.set_margin_top(10);

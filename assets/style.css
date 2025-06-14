@@ -74,7 +74,10 @@
     font-size: 14px;
     color: #7c818c;
     font-style: italic;
-    margin: 40/* Places popover */
+    margin: 40
+}
+
+/* Places popover */
 .places-popover {
     background-color: #383c4a;
     border-radius: 6px;

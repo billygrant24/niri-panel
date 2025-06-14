@@ -8,6 +8,7 @@ mod places;
 mod power;
 mod search;
 mod overview;
+mod keyboard_mode;
 
 pub use clock::Clock;
 pub use workspaces::Workspaces;
@@ -19,3 +20,4 @@ pub use places::Places;
 pub use power::Power;
 pub use search::Search;
 pub use overview::Overview;
+pub use keyboard_mode::KeyboardModeManager;

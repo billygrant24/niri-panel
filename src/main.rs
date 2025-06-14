@@ -3,6 +3,8 @@ use gtk4::{Application, ApplicationWindow};
 use gtk4_layer_shell::{Layer, LayerShell};
 use tracing::{info, error};
 use tracing_subscriber;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 mod panel;
 mod widgets;
@@ -50,21 +52,25 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     window.set_anchor(gtk4_layer_shell::Edge::Left, true);
     window.set_anchor(gtk4_layer_shell::Edge::Right, true);
     
-    // Set exclusive zone to reserve space (height + padding + margin)
-    window.set_exclusive_zone(config.height + 5); // 20 for padding (top+bottom), 10 for margin
+    // Set exclusive zone to reserve space
+    window.set_exclusive_zone(config.height + 5);
     
-    // Enable keyboard interactivity for the panel
-    window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
+    // Set keyboard mode to None initially (panel doesn't capture keyboard)
+    window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
 
     // Set window properties
-    window.set_height_request(config.height); // Add 20px for top+bottom padding
+    window.set_height_request(config.height);
     window.set_margin(gtk4_layer_shell::Edge::Top, 0);
     window.set_margin(gtk4_layer_shell::Edge::Bottom, 0);
     window.set_margin(gtk4_layer_shell::Edge::Left, 0);
     window.set_margin(gtk4_layer_shell::Edge::Right, 0);
     
-    // Create and setup panel
-    let panel = Panel::new(config)?;
+    // Create shared state for keyboard mode management
+    let window_weak = window.downgrade();
+    let active_popovers = Rc::new(RefCell::new(0));
+    
+    // Create and setup panel with keyboard mode management
+    let panel = Panel::new(config, window_weak, active_popovers)?;
     window.set_child(Some(panel.container()));
     
     // Apply CSS styling
