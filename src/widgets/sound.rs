@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, Scale, Switch, ApplicationWindow};
+use gtk4::{Box, Label, Button, Orientation, Image, Popover, Scale, Switch, ApplicationWindow, ListBox, ListBoxRow, ToggleButton};
 use gtk4_layer_shell::{LayerShell};
 use gtk4::glib::WeakRef;
 use anyhow::Result;
@@ -24,6 +24,15 @@ struct AudioInfo {
     volume: u32,
     muted: bool,
     device_name: String,
+    device_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct AudioDevice {
+    id: String,
+    name: String,
+    description: String,
+    is_default: bool,
 }
 
 impl Sound {
@@ -81,7 +90,7 @@ impl Sound {
         popover_box.set_margin_bottom(15);
         popover_box.set_margin_start(15);
         popover_box.set_margin_end(15);
-        popover_box.set_size_request(280, -1);
+        popover_box.set_size_request(320, -1);
         popover_box.add_css_class("sound-popover");
         
         // Volume slider
@@ -124,20 +133,35 @@ impl Sound {
         separator.set_margin_bottom(5);
         popover_box.append(&separator);
         
-        // Device info
-        let device_label = Label::new(Some("Output Device"));
-        device_label.set_halign(gtk4::Align::Start);
-        device_label.add_css_class("sound-device-title");
-        popover_box.append(&device_label);
+        // Output devices section
+        let devices_label = Label::new(Some("Output Devices"));
+        devices_label.set_halign(gtk4::Align::Start);
+        devices_label.add_css_class("sound-device-title");
+        popover_box.append(&devices_label);
         
-        let device_name_label = Label::new(Some("Built-in Audio"));
-        device_name_label.set_halign(gtk4::Align::Start);
-        device_name_label.add_css_class("sound-device-name");
-        popover_box.append(&device_name_label);
+        // Device list
+        let device_list = ListBox::new();
+        device_list.add_css_class("sound-device-list");
+        device_list.set_selection_mode(gtk4::SelectionMode::None);
+        
+        // ScrolledWindow for device list (in case there are many devices)
+        let device_scroll = gtk4::ScrolledWindow::new();
+        device_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+        device_scroll.set_min_content_height(50);
+        device_scroll.set_max_content_height(200);
+        device_scroll.set_child(Some(&device_list));
+        
+        popover_box.append(&device_scroll);
+        
+        // Separator
+        let separator2 = gtk4::Separator::new(Orientation::Horizontal);
+        separator2.set_margin_top(5);
+        separator2.set_margin_bottom(5);
+        popover_box.append(&separator2);
         
         // Audio settings button
         let settings_button = Button::with_label("Sound Settings");
-        settings_button.set_margin_top(10);
+        settings_button.set_margin_top(5);
         settings_button.connect_clicked(|_| {
             Self::open_sound_settings();
         });
@@ -165,6 +189,7 @@ impl Sound {
             volume: 50,
             muted: false,
             device_name: "Unknown".to_string(),
+            device_id: String::new(),
         }));
         
         // Set initial state
@@ -173,7 +198,6 @@ impl Sound {
         volume_scale.set_value(50.0);
         volume_label.set_text("50%");
         mute_switch.set_active(false);
-        device_name_label.set_text("Unknown");
         
         // Schedule immediate update after widget is realized
         let icon_init = icon.clone();
@@ -181,12 +205,12 @@ impl Sound {
         let volume_scale_init = volume_scale.clone();
         let volume_label_init = volume_label.clone();
         let mute_switch_init = mute_switch.clone();
-        let device_name_label_init = device_name_label.clone();
+        let device_list_init = device_list.clone();
         let audio_info_init = audio_info.clone();
         
         glib::idle_add_local_once(move || {
             Self::update_audio(&icon_init, &label_init, &volume_scale_init, &volume_label_init, 
-                             &mute_switch_init, &device_name_label_init, audio_info_init);
+                             &mute_switch_init, &device_list_init, audio_info_init);
         });
         
         // Flag to prevent feedback loops
@@ -272,13 +296,19 @@ impl Sound {
             glib::Propagation::Proceed
         });
         
+        // Update handler for popover show event to refresh device list
+        let device_list_for_show = device_list.clone();
+        popover.connect_show(move |_| {
+            Self::update_device_list(&device_list_for_show);
+        });
+        
         // Always use polling for primary updates (more reliable)
         let icon_weak = icon.downgrade();
         let label_weak = label.downgrade();
         let volume_scale_weak = volume_scale.downgrade();
         let volume_label_weak = volume_label.downgrade();
         let mute_switch_weak = mute_switch.downgrade();
-        let device_name_label_weak = device_name_label.downgrade();
+        let device_list_weak = device_list.downgrade();
         let audio_info_clone = audio_info.clone();
         let volume_updating_for_monitor = volume_updating.clone();
         let mute_updating_for_monitor = mute_updating.clone();
@@ -286,10 +316,10 @@ impl Sound {
         glib::timeout_add_local(Duration::from_millis(250), move || {
             // Only update if we're not currently updating from UI controls
             if !*volume_updating_for_monitor.borrow() && !*mute_updating_for_monitor.borrow() {
-                if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
+                if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device_list)) = 
                     (icon_weak.upgrade(), label_weak.upgrade(), volume_scale_weak.upgrade(), 
-                     volume_label_weak.upgrade(), mute_switch_weak.upgrade(), device_name_label_weak.upgrade()) {
-                    Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone.clone());
+                     volume_label_weak.upgrade(), mute_switch_weak.upgrade(), device_list_weak.upgrade()) {
+                    Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device_list, audio_info_clone.clone());
                 }
             }
             glib::ControlFlow::Continue
@@ -304,7 +334,7 @@ impl Sound {
             let volume_scale_weak2 = volume_scale.downgrade();
             let volume_label_weak2 = volume_label.downgrade();
             let mute_switch_weak2 = mute_switch.downgrade();
-            let device_name_label_weak2 = device_name_label.downgrade();
+            let device_list_weak2 = device_list.downgrade();
             let audio_info_clone2 = audio_info.clone();
             let volume_updating2 = volume_updating.clone();
             let mute_updating2 = mute_updating.clone();
@@ -315,10 +345,10 @@ impl Sound {
                 while let Ok(()) = audio_rx.try_recv() {
                     // Only update if we're not currently updating from UI controls
                     if !*volume_updating2.borrow() && !*mute_updating2.borrow() {
-                        if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device)) = 
+                        if let (Some(icon), Some(label), Some(scale), Some(vol_label), Some(mute), Some(device_list)) = 
                             (icon_weak2.upgrade(), label_weak2.upgrade(), volume_scale_weak2.upgrade(), 
-                             volume_label_weak2.upgrade(), mute_switch_weak2.upgrade(), device_name_label_weak2.upgrade()) {
-                            Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device, audio_info_clone2.clone());
+                             volume_label_weak2.upgrade(), mute_switch_weak2.upgrade(), device_list_weak2.upgrade()) {
+                            Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device_list, audio_info_clone2.clone());
                         }
                     }
                 }
@@ -432,7 +462,7 @@ impl Sound {
         scale: &Scale,
         volume_label: &Label,
         mute_switch: &Switch,
-        device_label: &Label,
+        device_list: &ListBox,
         audio_info: Arc<Mutex<AudioInfo>>
     ) {
         if let Some(info) = Self::get_audio_info() {
@@ -440,7 +470,8 @@ impl Sound {
             let mut should_update_ui = false;
             if let Ok(mut stored_info) = audio_info.lock() {
                 // Only update UI if values actually changed
-                if stored_info.volume != info.volume || stored_info.muted != info.muted || stored_info.device_name != info.device_name {
+                if stored_info.volume != info.volume || stored_info.muted != info.muted || 
+                   stored_info.device_name != info.device_name || stored_info.device_id != info.device_id {
                     should_update_ui = true;
                 }
                 *stored_info = info.clone();
@@ -462,8 +493,76 @@ impl Sound {
                 volume_label.set_text(&format!("{}%", info.volume));
                 mute_switch.set_active(info.muted);
                 scale.set_sensitive(!info.muted);
-                device_label.set_text(&info.device_name);
             }
+        }
+    }
+    
+    fn update_device_list(device_list: &ListBox) {
+        // Clear existing items
+        while let Some(child) = device_list.first_child() {
+            device_list.remove(&child);
+        }
+        
+        let devices = Self::get_audio_devices();
+        let toggle_buttons: Rc<RefCell<Vec<ToggleButton>>> = Rc::new(RefCell::new(Vec::new()));
+        
+        for device in devices {
+            let row = ListBoxRow::new();
+            row.add_css_class("sound-device-row");
+            
+            let hbox = Box::new(Orientation::Horizontal, 10);
+            hbox.set_margin_start(5);
+            hbox.set_margin_end(5);
+            hbox.set_margin_top(8);
+            hbox.set_margin_bottom(8);
+            
+            // Toggle button for selection
+            let toggle = ToggleButton::new();
+            toggle.set_active(device.is_default);
+            toggle.add_css_class("sound-device-toggle");
+            
+            // Store reference to this toggle button
+            toggle_buttons.borrow_mut().push(toggle.clone());
+            
+            hbox.append(&toggle);
+            
+            // Device info
+            let vbox = Box::new(Orientation::Vertical, 2);
+            vbox.set_hexpand(true);
+            
+            let name_label = Label::new(Some(&device.name));
+            name_label.set_halign(gtk4::Align::Start);
+            name_label.add_css_class("sound-device-name");
+            vbox.append(&name_label);
+            
+            if !device.description.is_empty() && device.description != device.name {
+                let desc_label = Label::new(Some(&device.description));
+                desc_label.set_halign(gtk4::Align::Start);
+                desc_label.add_css_class("sound-device-description");
+                desc_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                vbox.append(&desc_label);
+            }
+            
+            hbox.append(&vbox);
+            
+            // Handle device selection
+            let device_id = device.id.clone();
+            let toggle_buttons_clone = toggle_buttons.clone();
+            let current_toggle = toggle.clone();
+            toggle.connect_toggled(move |toggle| {
+                if toggle.is_active() {
+                    // Deactivate all other toggles
+                    for other_toggle in toggle_buttons_clone.borrow().iter() {
+                        if other_toggle != &current_toggle {
+                            other_toggle.set_active(false);
+                        }
+                    }
+                    Self::set_default_device(&device_id);
+                }
+            });
+            
+            row.set_child(Some(&hbox));
+            device_list.append(&row);
         }
     }
     
@@ -479,6 +578,140 @@ impl Sound {
             }
         };
         icon.set_from_icon_name(Some(icon_name));
+    }
+    
+    fn get_audio_devices() -> Vec<AudioDevice> {
+        let mut devices = Vec::new();
+        
+        // Try wpctl first (WirePlumber/PipeWire)
+        if let Ok(output) = Command::new("wpctl")
+            .args(&["status"])
+            .output()
+        {
+            if output.status.success() {
+                let status_str = String::from_utf8_lossy(&output.stdout);
+                let mut in_sinks_section = false;
+                let mut current_default_id = String::new();
+                
+                for line in status_str.lines() {
+                    if line.contains("Sinks:") {
+                        in_sinks_section = true;
+                        continue;
+                    }
+                    
+                    if in_sinks_section && (line.starts_with(" ├─") || line.starts_with(" └─") || line.starts_with(" │")) {
+                        // Parse format: " │  *   60. Family 17h/19h/1ah HD Audio Controller Analog Stereo [vol: 0.17]"
+                        let is_default = line.contains("*");
+                        
+                        // Extract ID and name
+                        if let Some(dot_pos) = line.find('.') {
+                            // Get ID (number before the dot)
+                            let prefix = &line[..dot_pos];
+                            let id = prefix.split_whitespace().last().unwrap_or("").to_string();
+                            
+                            // Get name (after the dot)
+                            let after_dot = &line[dot_pos+1..].trim();
+                            let name = if let Some(bracket_pos) = after_dot.find('[') {
+                                after_dot[..bracket_pos].trim().to_string()
+                            } else {
+                                after_dot.to_string()
+                            };
+                            
+                            if is_default {
+                                current_default_id = id.clone();
+                            }
+                            
+                            devices.push(AudioDevice {
+                                id: id.clone(),
+                                name: name.clone(),
+                                description: name,
+                                is_default,
+                            });
+                        }
+                    }
+                    
+                    if in_sinks_section && !line.starts_with(" ") && !line.trim().is_empty() {
+                        break;
+                    }
+                }
+                
+                return devices;
+            }
+        }
+        
+        // Try pactl as fallback (PulseAudio/older PipeWire)
+        if let Ok(output) = Command::new("pactl")
+            .args(&["list", "sinks", "short"])
+            .output()
+        {
+            if output.status.success() {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                
+                // Get default sink
+                let default_sink = if let Ok(default_output) = Command::new("pactl")
+                    .args(&["get-default-sink"])
+                    .output()
+                {
+                    String::from_utf8_lossy(&default_output.stdout).trim().to_string()
+                } else {
+                    String::new()
+                };
+                
+                // Get detailed sink info
+                if let Ok(detailed_output) = Command::new("pactl")
+                    .args(&["list", "sinks"])
+                    .output()
+                {
+                    let detailed_str = String::from_utf8_lossy(&detailed_output.stdout);
+                    let mut current_sink_name = String::new();
+                    let mut current_description = String::new();
+                    
+                    for line in detailed_str.lines() {
+                        if line.starts_with("Sink #") {
+                            // If we have a previous sink, add it
+                            if !current_sink_name.is_empty() {
+                                devices.push(AudioDevice {
+                                    id: current_sink_name.clone(),
+                                    name: current_description.clone(),
+                                    description: current_description.clone(),
+                                    is_default: current_sink_name == default_sink,
+                                });
+                            }
+                            current_sink_name.clear();
+                            current_description.clear();
+                        } else if line.trim().starts_with("Name:") {
+                            current_sink_name = line.split(':').nth(1).unwrap_or("").trim().to_string();
+                        } else if line.trim().starts_with("Description:") {
+                            current_description = line.split(':').nth(1).unwrap_or("").trim().to_string();
+                        }
+                    }
+                    
+                    // Add the last sink
+                    if !current_sink_name.is_empty() {
+                        devices.push(AudioDevice {
+                            id: current_sink_name.clone(),
+                            name: current_description.clone(),
+                            description: current_description,
+                            is_default: current_sink_name == default_sink,
+                        });
+                    }
+                }
+                
+                return devices;
+            }
+        }
+        
+        // If no devices found, return a default entry
+        if devices.is_empty() {
+            devices.push(AudioDevice {
+                id: "default".to_string(),
+                name: "Default Audio Device".to_string(),
+                description: "System default".to_string(),
+                is_default: true,
+            });
+        }
+        
+        devices
     }
     
     fn get_audio_info() -> Option<AudioInfo> {
@@ -502,14 +735,15 @@ impl Sound {
                     0
                 };
                 
-                // Get device name from wpctl status
-                let device_name = if let Ok(status_output) = Command::new("wpctl")
+                // Get device name and ID from wpctl status
+                let (device_name, device_id) = if let Ok(status_output) = Command::new("wpctl")
                     .arg("status")
                     .output()
                 {
                     let status_str = String::from_utf8_lossy(&status_output.stdout);
                     let mut in_sinks_section = false;
                     let mut found_device_name = "Unknown".to_string();
+                    let mut found_device_id = String::new();
                     
                     for line in status_str.lines() {
                         if line.contains("Sinks:") {
@@ -521,6 +755,10 @@ impl Sound {
                                 // Parse format: " │  *   60. Family 17h/19h/1ah HD Audio Controller Analog Stereo [vol: 0.17]"
                                 // Find the part after the number and dot
                                 if let Some(dot_pos) = line.find('.') {
+                                    // Get ID
+                                    let prefix = &line[..dot_pos];
+                                    found_device_id = prefix.split_whitespace().last().unwrap_or("").to_string();
+                                    
                                     let after_dot = &line[dot_pos+1..].trim();
                                     // Find where [vol: starts
                                     if let Some(vol_pos) = after_dot.find("[vol:") {
@@ -539,15 +777,16 @@ impl Sound {
                         }
                     }
                     
-                    found_device_name
+                    (found_device_name, found_device_id)
                 } else {
-                    "Unknown".to_string()
+                    ("Unknown".to_string(), String::new())
                 };
                 
                 return Some(AudioInfo {
                     volume,
                     muted,
                     device_name,
+                    device_id,
                 });
             }
         }
@@ -573,8 +812,8 @@ impl Sound {
                 false
             };
             
-            // Get device name
-            let device_name = if let Ok(device_output) = Command::new("pactl")
+            // Get device name and ID
+            let (device_name, device_id) = if let Ok(device_output) = Command::new("pactl")
                 .args(&["get-default-sink"])
                 .output()
             {
@@ -592,28 +831,31 @@ impl Sound {
                             found_sink = true;
                         }
                         if found_sink && desc_line.trim().starts_with("Description:") {
+                            let description = desc_line
+                                .split(':')
+                                .nth(1)
+                                .unwrap_or("Unknown")
+                                .trim()
+                                .to_string();
                             return Some(AudioInfo {
                                 volume,
                                 muted,
-                                device_name: desc_line
-                                    .split(':')
-                                    .nth(1)
-                                    .unwrap_or("Unknown")
-                                    .trim()
-                                    .to_string(),
+                                device_name: description,
+                                device_id: sink_name.clone(),
                             });
                         }
                     }
                 }
-                sink_name
+                (sink_name.clone(), sink_name)
             } else {
-                "Unknown".to_string()
+                ("Unknown".to_string(), String::new())
             };
             
             return Some(AudioInfo {
                 volume,
                 muted,
                 device_name,
+                device_id,
             });
         }
         
@@ -638,12 +880,25 @@ impl Sound {
                         volume,
                         muted,
                         device_name: "Master".to_string(),
+                        device_id: "master".to_string(),
                     });
                 }
             }
         }
         
         None
+    }
+    
+    fn set_default_device(device_id: &str) {
+        // Try wpctl first (WirePlumber/PipeWire)
+        let _ = Command::new("wpctl")
+            .args(&["set-default", device_id])
+            .spawn();
+        
+        // Fallback to pactl (PulseAudio)
+        let _ = Command::new("pactl")
+            .args(&["set-default-sink", device_id])
+            .spawn();
     }
     
     fn set_volume(volume: u32) {
