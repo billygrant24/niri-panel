@@ -28,6 +28,29 @@ struct AudioInfo {
 }
 
 #[derive(Debug, Clone)]
+struct MediaInfo {
+    player_name: String,
+    status: String,  // Playing, Paused, Stopped
+    artist: String,
+    title: String,
+    album: String,
+    art_url: Option<String>,
+}
+
+impl Default for MediaInfo {
+    fn default() -> Self {
+        Self {
+            player_name: String::new(),
+            status: "Stopped".to_string(),
+            artist: String::new(),
+            title: String::new(),
+            album: String::new(),
+            art_url: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct AudioDevice {
     id: String,
     name: String,
@@ -56,6 +79,9 @@ impl Sound {
         // Create popover for volume control
         let popover = Popover::new();
         popover.set_parent(&button);
+        popover.add_css_class("sound-popover");
+        popover.set_has_arrow(false);
+        popover.set_autohide(true);
         
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();
@@ -85,13 +111,18 @@ impl Sound {
             }
         });
         
-        let popover_box = Box::new(Orientation::Vertical, 10);
-        popover_box.set_margin_top(15);
-        popover_box.set_margin_bottom(15);
-        popover_box.set_margin_start(15);
-        popover_box.set_margin_end(15);
-        popover_box.set_size_request(320, -1);
-        popover_box.add_css_class("sound-popover");
+        // Create a notebook for tabs
+        let notebook = gtk4::Notebook::new();
+        notebook.set_margin_top(15);
+        notebook.set_margin_bottom(15);
+        notebook.set_size_request(380, -1);
+        
+        // Create tab for volume controls
+        let volume_tab = Box::new(Orientation::Vertical, 10);
+        volume_tab.set_margin_start(15);
+        volume_tab.set_margin_end(15);
+        volume_tab.set_margin_top(10);
+        volume_tab.set_margin_bottom(10);
         
         // Volume slider
         let volume_box = Box::new(Orientation::Horizontal, 10);
@@ -111,7 +142,7 @@ impl Sound {
         volume_box.append(&volume_scale);
         volume_box.append(&volume_label);
         
-        popover_box.append(&volume_box);
+        volume_tab.append(&volume_box);
         
         // Mute switch
         let mute_box = Box::new(Orientation::Horizontal, 10);
@@ -125,19 +156,19 @@ impl Sound {
         mute_box.append(&mute_label);
         mute_box.append(&mute_switch);
         
-        popover_box.append(&mute_box);
+        volume_tab.append(&mute_box);
         
         // Separator
         let separator = gtk4::Separator::new(Orientation::Horizontal);
         separator.set_margin_top(5);
         separator.set_margin_bottom(5);
-        popover_box.append(&separator);
+        volume_tab.append(&separator);
         
         // Output devices section
         let devices_label = Label::new(Some("Output Devices"));
         devices_label.set_halign(gtk4::Align::Start);
         devices_label.add_css_class("sound-device-title");
-        popover_box.append(&devices_label);
+        volume_tab.append(&devices_label);
         
         // Device list
         let device_list = ListBox::new();
@@ -148,16 +179,16 @@ impl Sound {
         let device_scroll = gtk4::ScrolledWindow::new();
         device_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         device_scroll.set_min_content_height(50);
-        device_scroll.set_max_content_height(200);
+        device_scroll.set_max_content_height(150);
         device_scroll.set_child(Some(&device_list));
         
-        popover_box.append(&device_scroll);
+        volume_tab.append(&device_scroll);
         
         // Separator
         let separator2 = gtk4::Separator::new(Orientation::Horizontal);
         separator2.set_margin_top(5);
         separator2.set_margin_bottom(5);
-        popover_box.append(&separator2);
+        volume_tab.append(&separator2);
         
         // Audio settings button
         let settings_button = Button::with_label("Sound Settings");
@@ -165,9 +196,86 @@ impl Sound {
         settings_button.connect_clicked(|_| {
             Self::open_sound_settings();
         });
-        popover_box.append(&settings_button);
+        volume_tab.append(&settings_button);
         
-        popover.set_child(Some(&popover_box));
+        // Create tab for media controls
+        let media_tab = Box::new(Orientation::Vertical, 10);
+        media_tab.set_margin_start(15);
+        media_tab.set_margin_end(15);
+        media_tab.set_margin_top(10);
+        media_tab.set_margin_bottom(10);
+        
+        // Now playing section
+        let now_playing_box = Box::new(Orientation::Vertical, 10);
+        now_playing_box.add_css_class("media-now-playing");
+        
+        // Media info (Artist - Title)
+        let media_info_box = Box::new(Orientation::Vertical, 5);
+        media_info_box.set_hexpand(true);
+        
+        let media_title = Label::new(Some("No media playing"));
+        media_title.set_halign(gtk4::Align::Center);
+        media_title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        media_title.add_css_class("media-title");
+        media_info_box.append(&media_title);
+        
+        let media_artist = Label::new(None);
+        media_artist.set_halign(gtk4::Align::Center);
+        media_artist.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        media_artist.add_css_class("media-artist");
+        media_info_box.append(&media_artist);
+        
+        now_playing_box.append(&media_info_box);
+        
+        // Media controls
+        let media_controls = Box::new(Orientation::Horizontal, 10);
+        media_controls.set_halign(gtk4::Align::Center);
+        media_controls.set_margin_top(5);
+        media_controls.set_margin_bottom(5);
+        
+        // Previous button
+        let prev_button = Button::from_icon_name("media-skip-backward-symbolic");
+        prev_button.add_css_class("media-control-button");
+        prev_button.connect_clicked(|_| {
+            Self::media_previous();
+        });
+        media_controls.append(&prev_button);
+        
+        // Play/Pause button
+        let play_button = Button::from_icon_name("media-playback-start-symbolic");
+        play_button.add_css_class("media-control-button");
+        play_button.add_css_class("media-play-button");
+        play_button.connect_clicked(|_| {
+            Self::media_play_pause();
+        });
+        media_controls.append(&play_button);
+        
+        // Next button
+        let next_button = Button::from_icon_name("media-skip-forward-symbolic");
+        next_button.add_css_class("media-control-button");
+        next_button.connect_clicked(|_| {
+            Self::media_next();
+        });
+        media_controls.append(&next_button);
+        
+        now_playing_box.append(&media_controls);
+        
+        // Player name
+        let player_name = Label::new(None);
+        player_name.set_halign(gtk4::Align::Center);
+        player_name.add_css_class("media-player-name");
+        now_playing_box.append(&player_name);
+        
+        media_tab.append(&now_playing_box);
+        
+        // Add tabs to notebook
+        let volume_tab_label = Label::new(Some("Volume"));
+        notebook.append_page(&volume_tab, Some(&volume_tab_label));
+        
+        let media_tab_label = Label::new(Some("Media"));
+        notebook.append_page(&media_tab, Some(&media_tab_label));
+        
+        popover.set_child(Some(&notebook));
         
         // Add Escape key handler to close popover
         let escape_controller = gtk4::EventControllerKey::new();
@@ -192,12 +300,20 @@ impl Sound {
             device_id: String::new(),
         }));
         
+        let media_info = Arc::new(Mutex::new(MediaInfo::default()));
+        
         // Set initial state
         icon.set_from_icon_name(Some("audio-volume-medium-symbolic"));
         label.set_text("50%");
         volume_scale.set_value(50.0);
         volume_label.set_text("50%");
         mute_switch.set_active(false);
+        
+        // Set initial state for media controls
+        media_title.set_text("No media playing");
+        media_artist.set_text("");
+        player_name.set_text("");
+        play_button.set_icon_name("media-playback-start-symbolic");
         
         // Schedule immediate update after widget is realized
         let icon_init = icon.clone();
@@ -211,6 +327,18 @@ impl Sound {
         glib::idle_add_local_once(move || {
             Self::update_audio(&icon_init, &label_init, &volume_scale_init, &volume_label_init, 
                              &mute_switch_init, &device_list_init, audio_info_init);
+        });
+        
+        // Schedule media info update
+        let media_title_init = media_title.clone();
+        let media_artist_init = media_artist.clone();
+        let player_name_init = player_name.clone();
+        let play_button_init = play_button.clone();
+        let media_info_init = media_info.clone();
+        
+        glib::idle_add_local_once(move || {
+            Self::update_media(&media_title_init, &media_artist_init, &player_name_init, 
+                               &play_button_init, media_info_init);
         });
         
         // Flag to prevent feedback loops
@@ -321,6 +449,22 @@ impl Sound {
                      volume_label_weak.upgrade(), mute_switch_weak.upgrade(), device_list_weak.upgrade()) {
                     Self::update_audio(&icon, &label, &scale, &vol_label, &mute, &device_list, audio_info_clone.clone());
                 }
+            }
+            glib::ControlFlow::Continue
+        });
+        
+        // Media info polling
+        let media_title_weak = media_title.downgrade();
+        let media_artist_weak = media_artist.downgrade();
+        let player_name_weak = player_name.downgrade();
+        let play_button_weak = play_button.downgrade();
+        let media_info_clone = media_info.clone();
+        
+        glib::timeout_add_local(Duration::from_millis(1000), move || {
+            if let (Some(title), Some(artist), Some(player), Some(play_btn)) = 
+                (media_title_weak.upgrade(), media_artist_weak.upgrade(), 
+                 player_name_weak.upgrade(), play_button_weak.upgrade()) {
+                Self::update_media(&title, &artist, &player, &play_btn, media_info_clone.clone());
             }
             glib::ControlFlow::Continue
         });
@@ -952,6 +1096,168 @@ impl Sound {
         }
         
         warn!("Could not find sound settings application");
+    }
+    
+    fn update_media(
+        title: &Label,
+        artist: &Label,
+        player_name: &Label,
+        play_button: &Button,
+        media_info: Arc<Mutex<MediaInfo>>
+    ) {
+        if let Some(new_info) = Self::get_media_info() {
+            let mut should_update_ui = false;
+            
+            if let Ok(mut stored_info) = media_info.lock() {
+                // Only update UI if values changed
+                if stored_info.title != new_info.title || 
+                   stored_info.artist != new_info.artist ||
+                   stored_info.player_name != new_info.player_name ||
+                   stored_info.status != new_info.status {
+                    should_update_ui = true;
+                }
+                *stored_info = new_info.clone();
+            }
+            
+            if should_update_ui {
+                // Update title and artist
+                if new_info.title.is_empty() {
+                    title.set_text("No media playing");
+                    artist.set_text("");
+                } else {
+                    title.set_text(&new_info.title);
+                    artist.set_text(&new_info.artist);
+                }
+                
+                // Update player name if available
+                if new_info.player_name.is_empty() {
+                    player_name.set_text("");
+                } else {
+                    let display_name = Self::format_player_name(&new_info.player_name);
+                    player_name.set_text(&display_name);
+                }
+                
+                // Update play/pause button icon
+                match new_info.status.as_str() {
+                    "Playing" => play_button.set_icon_name("media-playback-pause-symbolic"),
+                    _ => play_button.set_icon_name("media-playback-start-symbolic"),
+                }
+            }
+        } else {
+            // No media playing
+            title.set_text("No media playing");
+            artist.set_text("");
+            player_name.set_text("");
+            play_button.set_icon_name("media-playback-start-symbolic");
+            
+            // Clear stored info
+            if let Ok(mut stored_info) = media_info.lock() {
+                *stored_info = MediaInfo::default();
+            }
+        }
+    }
+    
+    fn get_media_info() -> Option<MediaInfo> {
+        // Check if playerctl is available
+        if !Self::command_exists("playerctl") {
+            return None;
+        }
+        
+        // Get current player status
+        let status = match Command::new("playerctl").args(&["status"]).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let status_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    match status_str.as_str() {
+                        "Playing" | "Paused" | "Stopped" => status_str,
+                        _ => "Stopped".to_string(),
+                    }
+                } else {
+                    return None; // No players available
+                }
+            },
+            Err(_) => return None,
+        };
+        
+        // If stopped, don't bother getting more info
+        if status == "Stopped" {
+            return Some(MediaInfo::default());
+        }
+        
+        // Get player name
+        let player_name = match Command::new("playerctl").args(&["--list-all"]).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let players = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    players.lines().next().unwrap_or("").to_string()
+                } else {
+                    String::new()
+                }
+            },
+            Err(_) => String::new(),
+        };
+        
+        // Get metadata
+        let metadata_args = vec!["metadata", "--format", "{{ artist }}\n{{ title }}\n{{ album }}"];
+        let metadata = match Command::new("playerctl").args(&metadata_args).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let metadata_str = String::from_utf8_lossy(&output.stdout).to_string();
+                    let parts: Vec<&str> = metadata_str.lines().collect();
+                    
+                    let artist = if parts.len() > 0 { parts[0].to_string() } else { String::new() };
+                    let title = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                    let album = if parts.len() > 2 { parts[2].to_string() } else { String::new() };
+                    
+                    (artist, title, album)
+                } else {
+                    (String::new(), String::new(), String::new())
+                }
+            },
+            Err(_) => (String::new(), String::new(), String::new()),
+        };
+        
+        Some(MediaInfo {
+            player_name,
+            status,
+            artist: metadata.0,
+            title: metadata.1,
+            album: metadata.2,
+            art_url: None,
+        })
+    }
+    
+    fn media_play_pause() {
+        let _ = Command::new("playerctl").args(&["play-pause"]).spawn();
+    }
+    
+    fn media_next() {
+        let _ = Command::new("playerctl").args(&["next"]).spawn();
+    }
+    
+    fn media_previous() {
+        let _ = Command::new("playerctl").args(&["previous"]).spawn();
+    }
+    
+    fn format_player_name(name: &str) -> String {
+        // Clean up common player names
+        match name {
+            "spotify" => "Spotify".to_string(),
+            "chromium" => "Chromium".to_string(),
+            "firefox" => "Firefox".to_string(),
+            "mpv" => "MPV".to_string(),
+            "vlc" => "VLC".to_string(),
+            "cmus" => "CMUS".to_string(),
+            _ => name.to_string(),
+        }
+    }
+    
+    fn command_exists(cmd: &str) -> bool {
+        Command::new("which")
+            .arg(cmd)
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
     }
     
     pub fn widget(&self) -> &Button {
