@@ -406,7 +406,6 @@ impl Places {
     fn open_location(path: &Path) {
         // Try to open with default file manager
         let file_managers = vec![
-            ("xdg-open", vec![]),
             ("nautilus", vec![]),
             ("nemo", vec![]),
             ("caja", vec![]),

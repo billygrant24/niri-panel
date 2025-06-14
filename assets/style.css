@@ -1365,3 +1365,158 @@ switch slider {
     text-align: center;
     margin: 40px;
 }
+
+/* Bluetooth widget */
+.bluetooth {
+    background: none;
+    border: none;
+    padding: 0 12px;
+    margin: 0;
+    border-radius: 0;
+    color: #d3dae3;
+    min-height: 32px;
+    transition: all 0.2s ease;
+}
+
+.bluetooth:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.bluetooth image {
+    color: #d3dae3;
+}
+
+.bluetooth-active {
+    color: #5294e2;
+}
+
+.bluetooth-disabled {
+    opacity: 0.5;
+}
+
+.bluetooth-status {
+    font-size: 11px;
+    font-weight: bold;
+    margin-left: 4px;
+    min-width: 14px;
+    color: #5294e2;
+}
+
+/* Bluetooth popover */
+.bluetooth-popover {
+    background-color: #383c4a;
+    border-radius: 8px;
+    border: 1px solid #20232b;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+.bluetooth-toggle-label {
+    font-weight: 500;
+    font-size: 14px;
+    color: #d3dae3;
+}
+
+.bluetooth-section-title {
+    font-weight: 500;
+    font-size: 12px;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.bluetooth-scan-button {
+    background: none;
+    border: none;
+    padding: 4px;
+    border-radius: 4px;
+    min-width: 24px;
+    min-height: 24px;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.bluetooth-scan-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+}
+
+.bluetooth-device-list {
+    background-color: transparent;
+}
+
+.bluetooth-device-row {
+    background-color: transparent;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.bluetooth-device-row:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.bluetooth-group-header {
+    font-weight: 600;
+    font-size: 12px;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.bluetooth-device-name {
+    font-size: 13px;
+    color: #d3dae3;
+}
+
+.bluetooth-device-connected {
+    font-weight: 500;
+    color: #5294e2;
+}
+
+.bluetooth-device-status {
+    font-size: 11px;
+    color: #7c818c;
+}
+
+.bluetooth-connect-button,
+.bluetooth-pair-button {
+    background-color: #404552;
+    border: none;
+    border-radius: 4px;
+    color: #d3dae3;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.bluetooth-connect-button:hover,
+.bluetooth-pair-button:hover {
+    background-color: #4b5162;
+}
+
+.bluetooth-disconnect-button {
+    background-color: rgba(242, 120, 53, 0.2);
+    border: none;
+    border-radius: 4px;
+    color: #f27835;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.bluetooth-disconnect-button:hover {
+    background-color: rgba(242, 120, 53, 0.3);
+}
+
+.bluetooth-settings-button {
+    background: none;
+    border: none;
+    padding: 4px;
+    border-radius: 4px;
+    min-width: 24px;
+    min-height: 24px;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.bluetooth-settings-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+}

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use crate::config::PanelConfig;
-use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search, Overview, Secrets};
+use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search, Overview, Secrets, Bluetooth};
 
 pub struct Panel {
     container: Box,
@@ -76,6 +76,11 @@ impl Panel {
         if config.show_sound {
             let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(sound.widget());
+        }
+        
+        if config.show_bluetooth {
+            let bluetooth = Bluetooth::new(window_weak.clone(), active_popovers.clone())?;
+            right_box.append(bluetooth.widget());
         }
         
         if config.show_network {

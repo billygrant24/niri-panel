@@ -10,6 +10,7 @@ mod search;
 mod secrets;
 mod overview;
 mod keyboard_mode;
+mod bluetooth;
 
 pub use clock::Clock;
 pub use workspaces::Workspaces;
@@ -23,3 +24,4 @@ pub use search::Search;
 pub use secrets::Secrets;
 pub use overview::Overview;
 pub use keyboard_mode::KeyboardModeManager;
+pub use bluetooth::Bluetooth;
