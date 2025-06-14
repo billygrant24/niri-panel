@@ -28,6 +28,70 @@ struct SearchResult {
 struct SearchConfig {
     inclusions: Vec<PathBuf>,
     exclusions: Vec<String>,
+    file_type: FileType,
+    case_sensitive: bool,
+    search_hidden: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum FileType {
+    AllFiles,
+    Documents,
+    Images,
+    Audio,
+    Video,
+    Folders
+}
+
+impl FileType {
+    fn extensions(&self) -> Vec<&'static str> {
+        match self {
+            FileType::AllFiles => vec![],
+            FileType::Documents => vec![
+                "txt", "md", "pdf", "doc", "docx", "odt",
+                "rtf", "tex", "xls", "xlsx", "ods", "ppt",
+                "pptx", "odp", "csv", "json", "xml", "html",
+                "htm", "rst", "org"
+            ],
+            FileType::Images => vec![
+                "jpg", "jpeg", "png", "gif", "bmp", "svg",
+                "tiff", "tif", "webp", "heic", "heif", "ico",
+                "xcf", "kra"
+            ],
+            FileType::Audio => vec![
+                "mp3", "wav", "ogg", "flac", "m4a", "aac",
+                "wma", "opus", "alac", "aiff", "midi", "mid"
+            ],
+            FileType::Video => vec![
+                "mp4", "mkv", "avi", "mov", "wmv", "flv",
+                "webm", "m4v", "mpg", "mpeg", "3gp", "ogv",
+                "vob", "ts"
+            ],
+            FileType::Folders => vec![],
+        }
+    }
+    
+    fn name(&self) -> &'static str {
+        match self {
+            FileType::AllFiles => "All Files",
+            FileType::Documents => "Documents",
+            FileType::Images => "Images",
+            FileType::Audio => "Audio",
+            FileType::Video => "Video",
+            FileType::Folders => "Folders"
+        }
+    }
+    
+    fn icon_name(&self) -> &'static str {
+        match self {
+            FileType::AllFiles => "text-x-generic-symbolic",
+            FileType::Documents => "x-office-document-symbolic",
+            FileType::Images => "image-x-generic-symbolic",
+            FileType::Audio => "audio-x-generic-symbolic",
+            FileType::Video => "video-x-generic-symbolic",
+            FileType::Folders => "folder-symbolic"
+        }
+    }
 }
 
 impl Default for SearchConfig {
@@ -55,6 +119,9 @@ impl Default for SearchConfig {
                 ".cache".to_string(),
                 ".local/share/Trash".to_string(),
             ],
+            file_type: FileType::AllFiles,
+            case_sensitive: false,
+            search_hidden: false,
         }
     }
 }
@@ -132,18 +199,61 @@ impl Search {
         main_box.set_margin_bottom(15);
         main_box.set_margin_start(15);
         main_box.set_margin_end(15);
-        main_box.set_size_request(550, 450);
+        main_box.set_size_request(600, 500);
+        
+        // Search entry and button area
+        let search_box = Box::new(Orientation::Horizontal, 10);
         
         // Search entry
         let search_entry = Entry::new();
-        search_entry.set_placeholder_text(Some("Type to search files and folders..."));
+        search_entry.set_placeholder_text(Some("Enter search term"));
         search_entry.add_css_class("search-entry");
         search_entry.set_hexpand(true);
-        
-        // Add search icon to entry
         search_entry.set_icon_from_icon_name(gtk4::EntryIconPosition::Primary, Some("system-search-symbolic"));
+        search_box.append(&search_entry);
         
-        main_box.append(&search_entry);
+        // Search button
+        let search_button = Button::with_label("Search");
+        search_button.add_css_class("search-button");
+        search_box.append(&search_button);
+        
+        main_box.append(&search_box);
+        
+        // Options bar
+        let options_box = Box::new(Orientation::Horizontal, 10);
+        options_box.set_margin_top(5);
+        options_box.set_margin_bottom(10);
+        
+        // File type dropdown
+        let file_type_box = Box::new(Orientation::Horizontal, 5);
+        let file_type_label = Label::new(Some("File Type:"));
+        file_type_box.append(&file_type_label);
+        
+        let file_type_combo = gtk4::DropDown::new(None::<gtk4::StringList>, None::<gtk4::Expression>);
+        let file_types = gtk4::StringList::new(&[
+            "All Files",
+            "Documents",
+            "Images",
+            "Audio",
+            "Video",
+            "Folders"
+        ]);
+        file_type_combo.set_model(Some(&file_types));
+        file_type_combo.set_selected(0); // Default to All Files
+        file_type_box.append(&file_type_combo);
+        options_box.append(&file_type_box);
+        
+        options_box.set_hexpand(true);
+        
+        // Case sensitive toggle
+        let case_check = gtk4::CheckButton::with_label("Case sensitive");
+        options_box.append(&case_check);
+        
+        // Include hidden files toggle
+        let hidden_check = gtk4::CheckButton::with_label("Include hidden files");
+        options_box.append(&hidden_check);
+        
+        main_box.append(&options_box);
         
         // Results area
         let results_scroll = ScrolledWindow::new();
@@ -177,34 +287,56 @@ impl Search {
         // Set up search handling
         let (tx, rx) = mpsc::channel::<Vec<SearchResult>>();
         
-        // Track the last search to avoid duplicate searches
-        let last_query = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+        // Create a mutable search config for storing search settings
+        let search_config = Rc::new(RefCell::new(config.clone()));
         
-        // Handle search input with debouncing
+        // Connect file type combo box
+        let search_config_clone = search_config.clone();
+        file_type_combo.connect_selected_notify(move |combo| {
+            let mut config = search_config_clone.borrow_mut();
+            match combo.selected() {
+                0 => config.file_type = FileType::AllFiles,
+                1 => config.file_type = FileType::Documents,
+                2 => config.file_type = FileType::Images,
+                3 => config.file_type = FileType::Audio,
+                4 => config.file_type = FileType::Video,
+                5 => config.file_type = FileType::Folders,
+                _ => config.file_type = FileType::AllFiles,
+            }
+        });
+        
+        // Connect case sensitive checkbox
+        let search_config_clone = search_config.clone();
+        case_check.connect_toggled(move |check| {
+            let mut config = search_config_clone.borrow_mut();
+            config.case_sensitive = check.is_active();
+        });
+        
+        // Connect hidden files checkbox
+        let search_config_clone = search_config.clone();
+        hidden_check.connect_toggled(move |check| {
+            let mut config = search_config_clone.borrow_mut();
+            config.search_hidden = check.is_active();
+        });
+        
+        // Set up the search button click handler
         let tx_clone = tx.clone();
+        let search_config_clone = search_config.clone();
+        let search_entry_clone = search_entry.clone();
         let status_weak = status_label.downgrade();
         let results_list_weak = results_list.downgrade();
-        let config_clone = config.clone();
-        let last_query_clone = last_query.clone();
         
-        let search_timeout_handle = std::rc::Rc::new(std::cell::RefCell::new(None::<glib::SourceId>));
-        let search_timeout_handle_clone = search_timeout_handle.clone();
-        
-        search_entry.connect_changed(move |entry| {
-            let query = entry.text().to_string();
+        let start_search = move || {
+            let query = search_entry_clone.text().to_string();
             
-            // Cancel previous timeout safely
-            let mut timeout_handle = search_timeout_handle_clone.borrow_mut();
-            *timeout_handle = None; // This automatically drops and cancels the old timeout
-            
-            if query.is_empty() {
-                // Clear results immediately for empty query
+            if query.trim().is_empty() {
+                // Don't search with empty query
                 if let Some(list) = results_list_weak.upgrade() {
                     while let Some(child) = list.first_child() {
                         list.remove(&child);
                     }
                     
-                    let empty_label = Label::new(Some("Start typing to search..."));
+                    let empty_label = Label::new(Some("Enter a search term and click Search"));
                     empty_label.add_css_class("search-empty-label");
                     empty_label.set_vexpand(true);
                     list.append(&empty_label);
@@ -216,39 +348,46 @@ impl Search {
                 return;
             }
             
+            if let Some(status) = status_weak.upgrade() {
+                status.set_text("Searching...");
+            }
+            
+            // Clear results list and show searching indicator
+            if let Some(list) = results_list_weak.upgrade() {
+                while let Some(child) = list.first_child() {
+                    list.remove(&child);
+                }
+                
+                let spinner = gtk4::Spinner::new();
+                spinner.set_size_request(32, 32);
+                spinner.set_vexpand(true);
+                spinner.set_hexpand(true);
+                spinner.set_halign(gtk4::Align::Center);
+                spinner.set_valign(gtk4::Align::Center);
+                spinner.start();
+                list.append(&spinner);
+            }
+            
             let tx = tx_clone.clone();
-            let config = config_clone.clone();
-            let status_weak_for_timeout = status_weak.clone();
-            let last_query = last_query_clone.clone();
+            let config = search_config_clone.borrow().clone();
+            let query_clone = query.clone();
             
-            // Set up new timeout for debouncing
-            let timeout_id = glib::timeout_add_local(Duration::from_millis(300), move || {
-                let current_query = query.clone();
-                
-                // Check if query changed
-                if *last_query.borrow() == current_query {
-                    return glib::ControlFlow::Break;
-                }
-                
-                *last_query.borrow_mut() = current_query.clone();
-                
-                if let Some(status) = status_weak_for_timeout.upgrade() {
-                    status.set_text("Searching...");
-                }
-                
-                let tx = tx.clone();
-                let config = config.clone();
-                
-                // Run search in background thread
-                thread::spawn(move || {
-                    let results = Self::fuzzy_search_files(&current_query, &config);
-                    let _ = tx.send(results);
-                });
-                
-                glib::ControlFlow::Break
+            // Run search in background thread
+            thread::spawn(move || {
+                let results = Self::search_files(&query_clone, &config);
+                let _ = tx.send(results);
             });
-            
-            *timeout_handle = Some(timeout_id);
+        };
+        
+        // Connect search button
+        let start_search_clone = start_search.clone();
+        search_button.connect_clicked(move |_| {
+            start_search_clone();
+        });
+        
+        // Connect enter key in search entry
+        search_entry.connect_activate(move |_| {
+            start_search();
         });
         
         // Handle search results
@@ -342,7 +481,7 @@ impl Search {
         Ok(Self { button })
     }
     
-    fn fuzzy_search_files(query: &str, config: &SearchConfig) -> Vec<SearchResult> {
+    fn search_files(query: &str, config: &SearchConfig) -> Vec<SearchResult> {
         if query.is_empty() {
             return Vec::new();
         }
@@ -364,10 +503,41 @@ impl Search {
             results = Self::search_with_find(query, config);
         }
         
+        // Filter by file type if needed
+        if config.file_type != FileType::AllFiles {
+            results = Self::filter_by_file_type(results, &config.file_type);
+        }
+        
         // Sort by score (best matches first)
         results.sort_by(|a, b| b.score.cmp(&a.score));
         
         results
+    }
+    
+    fn filter_by_file_type(results: Vec<SearchResult>, file_type: &FileType) -> Vec<SearchResult> {
+        // Handle folders case separately
+        if *file_type == FileType::Folders {
+            return results.into_iter()
+                .filter(|r| r.path.is_dir())
+                .collect();
+        }
+        
+        // Get the extensions for this file type
+        let extensions = file_type.extensions();
+        if extensions.is_empty() {
+            return results;
+        }
+        
+        results.into_iter()
+            .filter(|r| {
+                if let Some(ext) = r.path.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    extensions.contains(&ext_str.as_str())
+                } else {
+                    false
+                }
+            })
+            .collect()
     }
     
     fn search_with_fd(query: &str, config: &SearchConfig) -> Vec<SearchResult> {
@@ -379,23 +549,43 @@ impl Search {
             }
             
             let mut cmd = Command::new("fd");
-            cmd.args(&[
+            
+            // Basic arguments
+            let mut args = vec![
                 "--type", "f",
                 "--type", "d",
-                "--hidden",
                 "--no-ignore-vcs",
-                "--max-results", "200",
-            ]);
+                "--max-results", "500",
+            ];
+            
+            // Add hidden files flag if requested
+            if config.search_hidden {
+                args.push("--hidden");
+            }
+            
+            cmd.args(&args);
             
             // Add exclusions
             for exclusion in &config.exclusions {
                 cmd.args(&["--exclude", exclusion]);
             }
             
-            // Use regex for fuzzy matching
-            let pattern = query.chars()
-                .map(|c| format!(".*{}", regex::escape(&c.to_string())))
-                .collect::<String>();
+            // Use case-sensitivity flag if needed
+            if !config.case_sensitive {
+                cmd.args(&["--ignore-case"]);
+            }
+            
+            // Build the search pattern
+            let pattern = if query.contains(" ") {
+                // If contains spaces, search for files containing all terms
+                query.split_whitespace()
+                    .map(|term| format!(".*{}", regex::escape(term)))
+                    .collect::<Vec<_>>()
+                    .join(".*")
+            } else {
+                // Simple term, just search for it
+                query.to_string()
+            };
             
             cmd.arg(&pattern);
             cmd.current_dir(inclusion);
@@ -424,12 +614,19 @@ impl Search {
             }
             
             let mut cmd = Command::new("rg");
-            cmd.args(&[
+            
+            // Basic arguments
+            let mut args = vec![
                 "--files",
-                "--hidden",
                 "--no-ignore-vcs",
-                "--max-count", "200",
-            ]);
+            ];
+            
+            // Add hidden files flag if requested
+            if config.search_hidden {
+                args.push("--hidden");
+            }
+            
+            cmd.args(&args);
             
             // Add exclusions
             for exclusion in &config.exclusions {
@@ -443,9 +640,11 @@ impl Search {
                 
                 // Filter results with fuzzy matching
                 for line in output_str.lines() {
-                    if Self::fuzzy_match(line, query).0 {
+                    let (matches, score) = Self::fuzzy_match(line, query, config.case_sensitive);
+                    if matches {
                         let path = inclusion.join(line);
-                        if let Some(result) = Self::create_search_result(path, query) {
+                        if let Some(mut result) = Self::create_search_result(path, query) {
+                            result.score = score;
                             results.push(result);
                         }
                     }
@@ -473,6 +672,11 @@ impl Search {
                 cmd.args(&["-not", "-path", &format!("*{}*", exclusion)]);
             }
             
+            // Skip hidden files if not requested
+            if !config.search_hidden {
+                cmd.args(&["-not", "-path", r"*/\.*"]);
+            }
+            
             if let Ok(output) = cmd.output() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 
@@ -481,8 +685,10 @@ impl Search {
                     let path = PathBuf::from(line);
                     if let Some(name) = path.file_name() {
                         let name_str = name.to_string_lossy();
-                        if Self::fuzzy_match(&name_str, query).0 {
-                            if let Some(result) = Self::create_search_result(path, query) {
+                        let (matches, score) = Self::fuzzy_match(&name_str, query, config.case_sensitive);
+                        if matches {
+                            if let Some(mut result) = Self::create_search_result(path, query) {
+                                result.score = score;
                                 results.push(result);
                             }
                         }
@@ -494,24 +700,73 @@ impl Search {
         results
     }
     
-    fn fuzzy_match(text: &str, query: &str) -> (bool, i32) {
-        let text_lower = text.to_lowercase();
-        let query_lower = query.to_lowercase();
+    fn fuzzy_match(text: &str, query: &str, case_sensitive: bool) -> (bool, i32) {
+        // If query has multiple words, match each word separately
+        if query.contains(' ') {
+            let query_parts: Vec<&str> = query.split_whitespace().collect();
+            let mut total_score = 0;
+            
+            for part in query_parts.iter() {
+                let (matches, score) = Self::fuzzy_match_single(text, part, case_sensitive);
+                if !matches {
+                    return (false, 0); // All parts must match
+                }
+                total_score += score;
+            }
+            
+            return (true, total_score);
+        }
         
+        // Single word query
+        Self::fuzzy_match_single(text, query, case_sensitive)
+    }
+    
+    fn fuzzy_match_single(text: &str, query: &str, case_sensitive: bool) -> (bool, i32) {
+        // Handle empty query
+        if query.is_empty() {
+            return (true, 0);
+        }
+        
+        // Normalize case if needed
+        let (text_comp, query_comp) = if case_sensitive {
+            (text.to_string(), query.to_string())
+        } else {
+            (text.to_lowercase(), query.to_lowercase())
+        };
+        
+        // Exact match gets highest score
+        if text_comp.contains(&query_comp) {
+            let mut score = 100;
+            
+            // Bonus if it's at the start of the text or a word
+            if text_comp.starts_with(&query_comp) {
+                score += 50;
+            } else {
+                // Check if it's at a word boundary
+                let query_start_pos = text_comp.find(&query_comp).unwrap_or(0);
+                if query_start_pos > 0 && text.chars().nth(query_start_pos - 1).map_or(true, |c| c.is_whitespace() || c == '-' || c == '_') {
+                    score += 25;
+                }
+            }
+            
+            return (true, score);
+        }
+        
+        // Fall back to character-by-character fuzzy matching
         let mut score = 0;
-        let mut query_chars = query_lower.chars();
+        let mut query_chars = query_comp.chars();
         let mut current_char = query_chars.next();
         let mut consecutive = 0;
         let mut last_match_idx = 0;
         
-        for (idx, text_char) in text_lower.chars().enumerate() {
+        for (idx, text_char) in text_comp.chars().enumerate() {
             if let Some(qc) = current_char {
                 if text_char == qc {
                     // Higher score for consecutive matches
                     score += 10 + consecutive * 5;
                     
                     // Bonus for matches at word boundaries
-                    if idx == 0 || text.chars().nth(idx - 1).unwrap_or(' ').is_whitespace() {
+                    if idx == 0 || text.chars().nth(idx - 1).unwrap_or(' ').is_whitespace() || text.chars().nth(idx - 1).unwrap_or(' ') == '_' || text.chars().nth(idx - 1).unwrap_or(' ') == '-' {
                         score += 15;
                     }
                     
@@ -535,12 +790,13 @@ impl Search {
     
     fn create_search_result(path: PathBuf, query: &str) -> Option<SearchResult> {
         let name = path.file_name()?.to_string_lossy().to_string();
-        let (matches, score) = Self::fuzzy_match(&name, query);
+        let (matches, score) = Self::fuzzy_match(&name, query, false); // Default to case insensitive for creation
         
         if !matches {
             return None;
         }
         
+        // Path formatting for display
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home"));
         let parent = path.parent()
             .and_then(|p| p.strip_prefix(&home).ok())
@@ -551,11 +807,18 @@ impl Search {
                     .unwrap_or_default()
             });
         
+        // Boost score for exact name matches
+        let final_score = if name.to_lowercase() == query.to_lowercase() {
+            score + 200
+        } else {
+            score
+        };
+        
         Some(SearchResult {
             path,
             name,
             parent: if parent.is_empty() { "~".to_string() } else { format!("~/{}", parent) },
-            score,
+            score: final_score,
         })
     }
     
