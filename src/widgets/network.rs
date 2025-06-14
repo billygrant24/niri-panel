@@ -1,9 +1,11 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch, ScrolledWindow, Entry, Spinner};
+use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch, ScrolledWindow, Entry, Spinner, ApplicationWindow};
+use gtk4_layer_shell::{LayerShell};
+use gtk4::glib::WeakRef;
 use glib::timeout_add_seconds_local;
 use anyhow::Result;
 use std::process::Command;
-use tracing::warn;
+use tracing::{warn, info};
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -48,7 +50,10 @@ struct WifiNetwork {
 }
 
 impl Network {
-    pub fn new() -> Result<Self> {
+    pub fn new(
+        window_weak: WeakRef<ApplicationWindow>,
+        active_popovers: Rc<RefCell<i32>>
+    ) -> Result<Self> {
         let button = Button::new();
         button.add_css_class("network");
         
@@ -72,6 +77,34 @@ impl Network {
         popover.set_parent(&button);
         popover.add_css_class("network-popover");
         popover.set_has_arrow(false);
+        
+        // Handle popover show event - enable keyboard mode
+        let window_weak_show = window_weak.clone();
+        let active_popovers_show = active_popovers.clone();
+        popover.connect_show(move |_| {
+            *active_popovers_show.borrow_mut() += 1;
+            if let Some(window) = window_weak_show.upgrade() {
+                window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
+                info!("Network popover shown - keyboard mode set to OnDemand (active popovers: {})", 
+                      *active_popovers_show.borrow());
+            }
+        });
+        
+        // Handle popover hide event - disable keyboard mode if no other popovers
+        let window_weak_hide = window_weak.clone();
+        let active_popovers_hide = active_popovers.clone();
+        popover.connect_hide(move |_| {
+            *active_popovers_hide.borrow_mut() -= 1;
+            let count = *active_popovers_hide.borrow();
+            if count == 0 {
+                if let Some(window) = window_weak_hide.upgrade() {
+                    window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
+                    info!("Network popover hidden - keyboard mode set to None");
+                }
+            } else {
+                info!("Network popover hidden - keeping keyboard mode (active popovers: {})", count);
+            }
+        });
         
         let popover_box = Box::new(Orientation::Vertical, 10);
         popover_box.set_margin_top(10);
@@ -578,6 +611,21 @@ impl Network {
                 }
             }
         });
+        
+        // Handle Escape key
+        let controller = gtk4::EventControllerKey::new();
+        let dialog_weak4 = dialog.downgrade();
+        controller.connect_key_pressed(move |_, key, _, _| {
+            if key == gtk4::gdk::Key::Escape {
+                if let Some(dialog) = dialog_weak4.upgrade() {
+                    dialog.close();
+                }
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        dialog.add_controller(controller);
         
         dialog.present();
         password_entry.grab_focus();

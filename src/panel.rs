@@ -30,7 +30,7 @@ impl Panel {
         let left_box = Box::new(Orientation::Horizontal, 10);
         left_box.add_css_class("panel-left");
         left_box.set_halign(gtk4::Align::Start);
-        left_box.set_hexpand(false);
+        left_box.set_hexpand(true);
         
         // Create center box (empty for now, can add window title later)
         let center_box = Box::new(Orientation::Horizontal, 10);
@@ -42,7 +42,7 @@ impl Panel {
         let right_box = Box::new(Orientation::Horizontal, 10);
         right_box.add_css_class("panel-right");
         right_box.set_halign(gtk4::Align::End);
-        right_box.set_hexpand(false);
+        right_box.set_hexpand(true);
         
         // Add widgets with keyboard mode management where needed
         let overview = Overview::new()?;
@@ -53,45 +53,45 @@ impl Panel {
             left_box.append(launcher.widget());
         }
         
-        // if config.show_places {
-        //     let places = Places::new(window_weak.clone(), active_popovers.clone())?;
-        //     left_box.append(places.widget());
-        // }
+        if config.show_places {
+            let places = Places::new(window_weak.clone(), active_popovers.clone())?;
+            left_box.append(places.widget());
+        }
         
-        // if config.show_search {
-        //     let search = Search::new(window_weak.clone(), active_popovers.clone())?;
-        //     left_box.append(search.widget());
-        // }
+        if config.show_search {
+            let search = Search::new(window_weak.clone(), active_popovers.clone())?;
+            left_box.append(search.widget());
+        }
         
         // if config.show_workspaces {
         //     let workspaces = Workspaces::new()?;
         //     left_box.append(workspaces.widget());
         // }
         
-        // if config.show_sound {
-        //     let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
-        //     right_box.append(sound.widget());
-        // }
+        if config.show_sound {
+            let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
+            right_box.append(sound.widget());
+        }
         
-        // if config.show_network {
-        //     let network = Network::new(window_weak.clone(), active_popovers.clone())?;
-        //     right_box.append(network.widget());
-        // }
+        if config.show_network {
+            let network = Network::new(window_weak.clone(), active_popovers.clone())?;
+            right_box.append(network.widget());
+        }
         
-        // if config.show_battery {
-        //     let battery = Battery::new(window_weak.clone(), active_popovers.clone())?;
-        //     right_box.append(battery.widget());
-        // }
+        if config.show_battery {
+            let battery = Battery::new(window_weak.clone(), active_popovers.clone())?;
+            right_box.append(battery.widget());
+        }
         
-        // if config.show_clock {
-        //     let clock = Clock::new(&config.clock_format, window_weak.clone(), active_popovers.clone())?;
-        //     right_box.append(clock.widget());
-        // }
-        
-        // if config.show_power {
-        //     let power = Power::new(window_weak.clone(), active_popovers.clone())?;
-        //     right_box.append(power.widget());
-        // }
+       if config.show_clock {
+            let clock = Clock::new(&config.clock_format, window_weak.clone(), active_popovers.clone())?;
+            right_box.append(clock.widget());
+        }
+
+        if config.show_power {
+            let power = Power::new(window_weak.clone(), active_popovers.clone())?;
+            right_box.append(power.widget());
+        }
         
         // Pack everything
         container.append(&left_box);
