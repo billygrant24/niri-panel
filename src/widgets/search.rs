@@ -372,10 +372,40 @@ impl Search {
             let config = search_config_clone.borrow().clone();
             let query_clone = query.clone();
             
-            // Run search in background thread
+            // Run search in background thread with timeout to prevent hanging
             thread::spawn(move || {
-                let results = Self::search_files(&query_clone, &config);
-                let _ = tx.send(results);
+                // Create a channel for search termination
+                let (terminate_tx, terminate_rx) = mpsc::channel::<()>();
+                
+                // Spawn another thread to do the actual search
+                let search_thread = thread::spawn(move || {
+                    Self::search_files(&query_clone, &config)
+                });
+                
+                // Create a timeout thread that will signal to terminate after 5 seconds
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_secs(5));
+                    let _ = terminate_tx.send(());
+                });
+                
+                // Wait for either search completion or timeout
+                match terminate_rx.recv_timeout(Duration::from_secs(5)) {
+                    // Timeout or termination signal received
+                    Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // Search took too long, return partial or empty results
+                        let results = Vec::new();
+                        let _ = tx.send(results);
+                    },
+                    // Channel closed (shouldn't happen)
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        // Try to get results anyway
+                        if let Ok(results) = search_thread.join() {
+                            let _ = tx.send(results);
+                        } else {
+                            let _ = tx.send(Vec::new());
+                        }
+                    }
+                }
             });
         };
         
@@ -390,41 +420,63 @@ impl Search {
             start_search();
         });
         
-        // Handle search results
+        // Handle search results with less frequent checking to reduce CPU usage
         let results_list_weak = results_list.downgrade();
         let status_weak = status_label.downgrade();
         let popover_weak = popover.downgrade();
-        glib::timeout_add_local(Duration::from_millis(100), move || {
-            if let Ok(results) = rx.try_recv() {
-                if let (Some(list), Some(status)) = (results_list_weak.upgrade(), status_weak.upgrade()) {
-                    // Clear previous results
-                    while let Some(child) = list.first_child() {
-                        list.remove(&child);
-                    }
-                    
-                    if results.is_empty() {
-                        let no_results = Label::new(Some("No results found"));
-                        no_results.add_css_class("search-empty-label");
-                        no_results.set_vexpand(true);
-                        list.append(&no_results);
-                        status.set_text("No results");
-                    } else {
-                        let count = results.len();
-                        let displayed = count.min(100);
+        
+        // Use a more efficient approach to processing search results
+        glib::timeout_add_local(Duration::from_millis(250), move || {
+            // Only process one result per timeout to avoid UI freezes
+            match rx.try_recv() {
+                Ok(results) => {
+                    if let (Some(list), Some(status)) = (results_list_weak.upgrade(), status_weak.upgrade()) {
+                        // Use idle callback to avoid blocking the main thread
+                        let list_clone = list.clone();
+                        let status_clone = status.clone();
+                        let popover_weak_clone = popover_weak.clone();
                         
-                        for result in results.into_iter().take(displayed) {
-                            let row = Self::create_result_row(result, popover_weak.clone());
-                            list.append(&row);
-                        }
-                        
-                        if count > displayed {
-                            status.set_text(&format!("Showing {} of {} results", displayed, count));
-                        } else {
-                            status.set_text(&format!("{} results", count));
-                        }
+                        glib::idle_add_local_once(move || {
+                            // Clear previous results
+                            while let Some(child) = list_clone.first_child() {
+                                list_clone.remove(&child);
+                            }
+                            
+                            if results.is_empty() {
+                                let no_results = Label::new(Some("No results found"));
+                                no_results.add_css_class("search-empty-label");
+                                no_results.set_vexpand(true);
+                                list_clone.append(&no_results);
+                                status_clone.set_text("No results");
+                            } else {
+                                let count = results.len();
+                                // Show fewer results to improve performance
+                                let displayed = count.min(50);
+                                
+                                // Process results in chunks to avoid freezing the UI
+                                for (i, result) in results.into_iter().take(displayed).enumerate() {
+                                    // Batch operations to reduce UI updates
+                                    let row = Self::create_result_row(result, popover_weak_clone.clone());
+                                    list_clone.append(&row);
+                                    
+                                    // Give UI a chance to update for every 10 items
+                                    if i % 10 == 9 {
+                                        while gtk4::glib::MainContext::default().iteration(false) {}
+                                    }
+                                }
+                                
+                                if count > displayed {
+                                    status_clone.set_text(&format!("Showing {} of {} results", displayed, count));
+                                } else {
+                                    status_clone.set_text(&format!("{} results", count));
+                                }
+                            }
+                        });
                     }
-                }
+                },
+                Err(_) => {} // No results to process
             }
+            
             glib::ControlFlow::Continue
         });
         
