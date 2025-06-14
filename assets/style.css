@@ -1148,3 +1148,111 @@ switch slider {
 .panel > box > box > * {
     margin: 0;
 }
+
+/* Calendar popover */
+.calendar-popover {
+    background-color: #383c4a;
+    border-radius: 8px;
+    border: 1px solid #20232b;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+.clock-calendar {
+    background-color: #404552;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.clock-calendar:selected {
+    background-color: #5294e2;
+    color: #ffffff;
+}
+
+.calendar-date-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #d3dae3;
+    margin-top: 5px;
+}
+
+.calendar-section-label {
+    font-weight: 500;
+    font-size: 12px;
+    opacity: 0.7;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.calendar-todo-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: #5294e2;
+    background-color: rgba(82, 148, 226, 0.15);
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.calendar-todo-entry {
+    background-color: #2b2e3b;
+    border: 1px solid #20232b;
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 13px;
+    color: #d3dae3;
+}
+
+.calendar-todo-entry:focus {
+    border-color: #5294e2;
+}
+
+.calendar-todo-add {
+    background-color: #5294e2;
+    border: none;
+    border-radius: 4px;
+    color: #ffffff;
+    padding: 8px 16px;
+    font-weight: 500;
+}
+
+.calendar-todo-add:hover {
+    background-color: #6ba3e5;
+}
+
+.calendar-todo-list {
+    background-color: transparent;
+}
+
+.calendar-todo-item {
+    background-color: transparent;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.calendar-todo-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.calendar-todo-completed {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.calendar-todo-due {
+    font-size: 11px;
+    color: #7c818c;
+}
+
+.calendar-todo-delete {
+    background: none;
+    border: none;
+    padding: 4px;
+    border-radius: 4px;
+    color: #7c818c;
+    min-width: 24px;
+    min-height: 24px;
+}
+
+.calendar-todo-delete:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #f27835;
+}
