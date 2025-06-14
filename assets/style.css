@@ -1256,3 +1256,112 @@ switch slider {
     background-color: rgba(255, 255, 255, 0.1);
     color: #f27835;
 }
+
+
+/* Secrets widget */
+.secrets {
+    background: none;
+    border: none;
+    padding: 0 16px;
+    margin: 0;
+    border-radius: 0;
+    min-height: 32px;
+    transition: all 0.2s ease;
+}
+
+.secrets:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.secrets:active {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Secrets popover */
+.secrets-popover {
+    background-color: #383c4a;
+    border-radius: 8px;
+    border: 1px solid #20232b;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+.secrets-search {
+    background-color: #2b2e3b;
+    border: 1px solid #20232b;
+    border-radius: 6px;
+    color: #d3dae3;
+    font-size: 14px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+}
+
+.secrets-search:focus {
+    border-color: #5294e2;
+    outline: none;
+}
+
+.secrets-list {
+    background-color: transparent;
+}
+
+.secret-row {
+    background-color: transparent;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.secret-row:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.secrets-category-header {
+    font-weight: 600;
+    font-size: 12px;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.secret-name {
+    font-size: 13px;
+    color: #d3dae3;
+}
+
+.secret-action-button {
+    background: none;
+    border: none;
+    padding: 4px;
+    border-radius: 4px;
+    min-width: 24px;
+    min-height: 24px;
+    transition: all 0.2s ease;
+    opacity: 0.7;
+}
+
+.secret-action-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+}
+
+.secret-action-button.success {
+    background-color: rgba(82, 148, 226, 0.3);
+}
+
+.otp-code {
+    font-family: monospace;
+    font-size: 16px;
+    font-weight: bold;
+    color: #5294e2;
+}
+
+.otp-timer {
+    font-size: 11px;
+    color: #7c818c;
+    font-family: monospace;
+}
+
+.error-label {
+    color: #f27835;
+    font-size: 14px;
+    text-align: center;
+    margin: 40px;
+}

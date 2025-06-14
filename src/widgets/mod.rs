@@ -7,6 +7,7 @@ mod sound;
 mod places;
 mod power;
 mod search;
+mod secrets;
 mod overview;
 mod keyboard_mode;
 
@@ -19,5 +20,6 @@ pub use sound::Sound;
 pub use places::Places;
 pub use power::Power;
 pub use search::Search;
+pub use secrets::Secrets;
 pub use overview::Overview;
 pub use keyboard_mode::KeyboardModeManager;
