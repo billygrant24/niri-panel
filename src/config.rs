@@ -23,7 +23,7 @@ pub struct PanelConfig {
 impl Default for PanelConfig {
     fn default() -> Self {
         Self {
-            height: 28,
+            height: 32,
             show_launcher: true,
             show_places: true,
             show_search: true,

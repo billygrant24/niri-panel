@@ -53,7 +53,7 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     window.set_anchor(gtk4_layer_shell::Edge::Right, true);
     
     // Set exclusive zone to reserve space
-    window.set_exclusive_zone(config.height + 5);
+    window.set_exclusive_zone(config.height + 15);
     
     // Set keyboard mode to None initially (panel doesn't capture keyboard)
     window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);

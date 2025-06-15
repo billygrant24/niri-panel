@@ -84,9 +84,9 @@ impl Bluetooth {
         let icon = Image::from_icon_name("bluetooth-symbolic");
         icon.set_icon_size(gtk4::IconSize::Large);
         
-        let status_label = Label::new(None);
+        let status_label = Label::new(Some(""));
         status_label.add_css_class("bluetooth-status");
-        status_label.set_visible(false); // Hidden by default
+        status_label.set_visible(true); // Hidden by default
         
         container.append(&icon);
         container.append(&status_label);

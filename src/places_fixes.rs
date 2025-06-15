@@ -3,13 +3,16 @@ use gtk4::{Button, Image, Popover, Box, Orientation, Label, Separator, Notebook,
 use gtk4_layer_shell::{LayerShell};
 use gtk4::glib::WeakRef;
 use anyhow::Result;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{warn, info, error};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::BufRead;
+use std::time::{Duration, Instant};
+use std::thread;
+use glib::ControlFlow;
 
 pub struct Places {
     button: Button,
@@ -57,12 +60,12 @@ impl Places {
         }
         
         if image.icon_name().is_none() {
+            let label = Label::new(Some("📁"));
+            label.add_css_class("icon-fallback");
+            button.set_child(Some(&label));
         } else {
             image.set_icon_size(gtk4::IconSize::Large);
             button.set_child(Some(&image));
-            let label = Label::new(Some("📁 Places"));
-            label.add_css_class("icon-fallback");
-            button.set_child(Some(&label));
         }
         
         // Create popover for places menu
@@ -207,27 +210,36 @@ impl Places {
             }
         }
         
-        // Add bookmarks if any
-        let bookmarks = Self::get_gtk_bookmarks();
-        if !bookmarks.is_empty() {
-            let separator2 = Separator::new(Orientation::Horizontal);
-            separator2.set_margin_top(5);
-            separator2.set_margin_bottom(5);
-            list_box.append(&separator2);
+        // Add bookmarks if any - do this asynchronously
+        let bookmarks_weak = list_box.downgrade();
+        thread::spawn(move || {
+            let bookmarks = Self::get_gtk_bookmarks();
             
-            let bookmarks_label = Label::new(Some("Bookmarks"));
-            bookmarks_label.set_halign(gtk4::Align::Start);
-            bookmarks_label.add_css_class("places-section-label");
-            bookmarks_label.set_margin_start(10);
-            bookmarks_label.set_margin_top(5);
-            bookmarks_label.set_margin_bottom(5);
-            list_box.append(&bookmarks_label);
-            
-            for bookmark in bookmarks {
-                let button = Self::create_place_button(&bookmark);
-                list_box.append(&button);
+            if !bookmarks.is_empty() {
+                glib::idle_add_local(move || {
+                    if let Some(list_box) = bookmarks_weak.upgrade() {
+                        let separator2 = Separator::new(Orientation::Horizontal);
+                        separator2.set_margin_top(5);
+                        separator2.set_margin_bottom(5);
+                        list_box.append(&separator2);
+                        
+                        let bookmarks_label = Label::new(Some("Bookmarks"));
+                        bookmarks_label.set_halign(gtk4::Align::Start);
+                        bookmarks_label.add_css_class("places-section-label");
+                        bookmarks_label.set_margin_start(10);
+                        bookmarks_label.set_margin_top(5);
+                        bookmarks_label.set_margin_bottom(5);
+                        list_box.append(&bookmarks_label);
+                        
+                        for bookmark in bookmarks {
+                            let button = Self::create_place_button(&bookmark);
+                            list_box.append(&button);
+                        }
+                    }
+                    ControlFlow::Break
+                });
             }
-        }
+        });
         
         // Add recent files button
         let separator3 = Separator::new(Orientation::Horizontal);
@@ -301,51 +313,88 @@ impl Places {
         ssh_label.set_margin_bottom(5);
         list_box.append(&ssh_label);
         
-        // Get SSH connections from config file
-        let ssh_connections = Self::get_ssh_connections();
+        // Create a loading label initially
+        let loading_label = Label::new(Some("Loading SSH connections..."));
+        loading_label.add_css_class("dim-label");
+        loading_label.set_margin_start(20);
+        loading_label.set_margin_top(10);
+        loading_label.set_margin_bottom(10);
+        list_box.append(&loading_label);
         
-        if ssh_connections.is_empty() {
-            let empty_label = Label::new(Some("No SSH connections found"));
-            empty_label.add_css_class("dim-label");
-            empty_label.set_margin_start(20);
-            empty_label.set_margin_top(10);
-            empty_label.set_margin_bottom(10);
-            list_box.append(&empty_label);
-        } else {
-            for connection in ssh_connections {
-                let button = Self::create_ssh_button(&connection);
-                list_box.append(&button);
-            }
-        }
+        // Create a reference to the list box for the background thread
+        let list_box_weak = list_box.downgrade();
         
-        // Add "Add SSH Connection" button
-        let separator = Separator::new(Orientation::Horizontal);
-        separator.set_margin_top(10);
-        separator.set_margin_bottom(10);
-        list_box.append(&separator);
-        
-        let add_button = Button::new();
-        add_button.add_css_class("places-item");
-        let add_box = Box::new(Orientation::Horizontal, 10);
-        add_box.set_margin_start(10);
-        add_box.set_margin_end(10);
-        add_box.set_margin_top(8);
-        add_box.set_margin_bottom(8);
-        
-        let add_icon = Image::from_icon_name("list-add-symbolic");
-        add_icon.set_pixel_size(16);
-        add_box.append(&add_icon);
-        
-        let add_label = Label::new(Some("Edit SSH Config"));
-        add_label.set_hexpand(true);
-        add_label.set_halign(gtk4::Align::Start);
-        add_box.append(&add_label);
-        
-        add_button.set_child(Some(&add_box));
-        add_button.connect_clicked(move |_| {
-            Self::open_ssh_config();
+        // Load SSH connections in a background thread
+        thread::spawn(move || {
+            // Get SSH connections from config file
+            let ssh_connections = Self::get_ssh_connections();
+            
+            // Update UI on main thread
+            glib::idle_add_local(move || {
+                if let Some(list_box) = list_box_weak.upgrade() {
+                    // Remove loading label
+                    if let Some(child) = list_box.first_child() {
+                        list_box.remove(&child);
+                    }
+                    if let Some(child) = list_box.first_child() {
+                        list_box.remove(&child);
+                    }
+                    
+                    // Add back the section header
+                    let ssh_label = Label::new(Some("SSH Connections"));
+                    ssh_label.set_halign(gtk4::Align::Start);
+                    ssh_label.add_css_class("places-section-label");
+                    ssh_label.set_margin_start(10);
+                    ssh_label.set_margin_top(10);
+                    ssh_label.set_margin_bottom(5);
+                    list_box.append(&ssh_label);
+                    
+                    if ssh_connections.is_empty() {
+                        let empty_label = Label::new(Some("No SSH connections found"));
+                        empty_label.add_css_class("dim-label");
+                        empty_label.set_margin_start(20);
+                        empty_label.set_margin_top(10);
+                        empty_label.set_margin_bottom(10);
+                        list_box.append(&empty_label);
+                    } else {
+                        for connection in ssh_connections {
+                            let button = Self::create_ssh_button(&connection);
+                            list_box.append(&button);
+                        }
+                    }
+                    
+                    // Add "Add SSH Connection" button
+                    let separator = Separator::new(Orientation::Horizontal);
+                    separator.set_margin_top(10);
+                    separator.set_margin_bottom(10);
+                    list_box.append(&separator);
+                    
+                    let add_button = Button::new();
+                    add_button.add_css_class("places-item");
+                    let add_box = Box::new(Orientation::Horizontal, 10);
+                    add_box.set_margin_start(10);
+                    add_box.set_margin_end(10);
+                    add_box.set_margin_top(8);
+                    add_box.set_margin_bottom(8);
+                    
+                    let add_icon = Image::from_icon_name("list-add-symbolic");
+                    add_icon.set_pixel_size(16);
+                    add_box.append(&add_icon);
+                    
+                    let add_label = Label::new(Some("Edit SSH Config"));
+                    add_label.set_hexpand(true);
+                    add_label.set_halign(gtk4::Align::Start);
+                    add_box.append(&add_label);
+                    
+                    add_button.set_child(Some(&add_box));
+                    add_button.connect_clicked(move |_| {
+                        Self::open_ssh_config();
+                    });
+                    list_box.append(&add_button);
+                }
+                ControlFlow::Break
+            });
         });
-        list_box.append(&add_button);
         
         scrolled_window.set_child(Some(&list_box));
         scrolled_window
@@ -459,48 +508,72 @@ impl Places {
     }
     
     fn open_location(path: &Path) {
-        // Try to open with default file manager
-        let file_managers = vec![
-            ("nautilus", vec![]),
-            ("nemo", vec![]),
-            ("caja", vec![]),
-            ("thunar", vec![]),
-            ("pcmanfm", vec![]),
-            ("dolphin", vec![]),
-        ];
+        let path_owned = path.to_path_buf();
         
-        let path_str = path.to_string_lossy();
-        
-        for (cmd, mut args) in file_managers {
-            args.push(path_str.as_ref());
-            if Command::new(cmd).args(&args).spawn().is_ok() {
-                return;
+        // Run in background thread to avoid blocking UI
+        thread::spawn(move || {
+            // Try to open with default file manager
+            let file_managers = vec![
+                ("nautilus", vec![]),
+                ("nemo", vec![]),
+                ("caja", vec![]),
+                ("thunar", vec![]),
+                ("pcmanfm", vec![]),
+                ("dolphin", vec![]),
+            ];
+            
+            let path_str = path_owned.to_string_lossy();
+            
+            for (cmd, mut args) in file_managers {
+                args.push(path_str.as_ref());
+                match Command::new(cmd)
+                    .args(&args)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn() {
+                        Ok(_) => {
+                            info!("Opened location {} with {}", path_str, cmd);
+                            return;
+                        }
+                        Err(_) => continue
+                    }
             }
-        }
-        
-        warn!("Could not find file manager to open: {}", path_str);
+            
+            warn!("Could not find file manager to open: {}", path_str);
+        });
     }
     
     fn open_recent() {
-        // Try to open recent files
-        // Most file managers support a recent:// URI
-        let commands = vec![
-            ("xdg-open", vec!["recent://"]),
-            ("nautilus", vec!["recent://"]),
-            ("nemo", vec!["recent://"]),
-            ("caja", vec!["recent://"]),
-        ];
-        
-        for (cmd, args) in commands {
-            if Command::new(cmd).args(&args).spawn().is_ok() {
-                return;
+        // Run in background thread to avoid blocking UI
+        thread::spawn(move || {
+            // Try to open recent files
+            // Most file managers support a recent:// URI
+            let commands = vec![
+                ("xdg-open", vec!["recent://"]),
+                ("nautilus", vec!["recent://"]),
+                ("nemo", vec!["recent://"]),
+                ("caja", vec!["recent://"]),
+            ];
+            
+            for (cmd, args) in commands {
+                match Command::new(cmd)
+                    .args(&args)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn() {
+                        Ok(_) => {
+                            info!("Opened recent files with {}", cmd);
+                            return;
+                        }
+                        Err(_) => continue
+                    }
             }
-        }
-        
-        // Fallback to opening home directory
-        if let Some(home) = dirs::home_dir() {
-            Self::open_location(&home);
-        }
+            
+            // Fallback to opening home directory
+            if let Some(home) = dirs::home_dir() {
+                Self::open_location(&home);
+            }
+        });
     }
     
     fn get_ssh_connections() -> Vec<SSHConnection> {
@@ -511,27 +584,49 @@ impl Places {
             // Create SSH config directory if it doesn't exist
             if let Some(config_dir) = config_path.parent() {
                 if !config_dir.exists() {
-                    if let Err(e) = std::fs::create_dir_all(config_dir) {
-                        error!("Failed to create SSH config directory: {}", e);
-                        return connections;
+                    // Run this in a non-blocking way
+                    match std::fs::create_dir_all(config_dir) {
+                        Ok(_) => {},
+                        Err(e) => {
+                            error!("Failed to create SSH config directory: {}", e);
+                            return connections;
+                        }
                     }
                 }
             }
             
             // Create empty config file
-            if let Err(e) = std::fs::File::create(&config_path) {
-                error!("Failed to create SSH config file: {}", e);
-                return connections;
+            match std::fs::File::create(&config_path) {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("Failed to create SSH config file: {}", e);
+                    return connections;
+                }
             }
         }
         
-        // Open the config file
+        // Use a timeout for file operations
+        let start_time = Instant::now();
+        let timeout = Duration::from_secs(1); // 1 second timeout for file operations
+        
+        // Open the config file with timeout check
         match std::fs::File::open(&config_path) {
             Ok(file) => {
+                if start_time.elapsed() > timeout {
+                    error!("SSH config file open operation timed out");
+                    return connections;
+                }
+                
                 let reader = std::io::BufReader::new(file);
                 let mut current_host: Option<SSHConnection> = None;
                 
                 for line in reader.lines() {
+                    // Check timeout periodically
+                    if start_time.elapsed() > timeout {
+                        error!("SSH config file read operation timed out");
+                        return connections;
+                    }
+                    
                     if let Ok(line) = line {
                         let line = line.trim();
                         if line.is_empty() || line.starts_with('#') {
@@ -634,106 +729,143 @@ impl Places {
     }
     
     fn open_ssh_connection(connection: &SSHConnection) {
-        // Build SSH command arguments
-        let mut ssh_args = Vec::new();
+        // Clone connection for thread
+        let connection_clone = connection.clone();
         
-        // Add user@host
-        let mut host_string = String::new();
-        if let Some(user) = &connection.user {
-            host_string.push_str(user);
-            host_string.push('@');
-        }
-        host_string.push_str(&connection.hostname);
-        ssh_args.push(host_string.clone());
-        
-        // Add port if specified
-        if let Some(port) = connection.port {
-            ssh_args.push("-p".to_string());
-            ssh_args.push(port.to_string());
-        }
-        
-        // Display connection info for logging
-        let display_name = if let Some(user) = &connection.user {
-            format!("{}@{}", user, connection.hostname)
-        } else {
-            connection.hostname.clone()
-        };
-        
-        info!("Opening SSH connection to {}", display_name);
-        
-        // Try to open with alacritty first (preferred)
-        let mut alacritty_args = vec!["-e", "ssh"];
-        alacritty_args.extend(ssh_args.iter().map(|s| s.as_str()));
-        
-        if Command::new("alacritty")
-            .args(&alacritty_args)
-            .spawn()
-            .is_ok() {
-            info!("Opened SSH connection with alacritty");
-            return;
-        }
-        
-        // Fallbacks to other terminals
-        let terminals = vec![
-            ("kitty", vec!["-e", "ssh"]),
-            ("gnome-terminal", vec!["--", "ssh"]),
-            ("xterm", vec!["-e", "ssh"]),
-            ("konsole", vec!["-e", "ssh"]),
-            ("terminator", vec!["-e", "ssh"]),
-            ("terminology", vec!["-e", "ssh"]),
-        ];
-        
-        for (terminal, base_args) in terminals {
-            let mut args = base_args.clone();
+        // Run in background thread to avoid blocking UI
+        thread::spawn(move || {
+            // Build SSH command arguments
+            let mut ssh_args = Vec::new();
             
-            // Add SSH arguments
-            args.extend(ssh_args.iter().map(|s| s.as_str()));
-            
-            if Command::new(terminal).args(&args).spawn().is_ok() {
-                info!("Opened SSH connection with {}", terminal);
-                return;
+            // Add user@host
+            let mut host_string = String::new();
+            if let Some(user) = &connection_clone.user {
+                host_string.push_str(user);
+                host_string.push('@');
             }
-        }
-        
-        // If we got here, no terminal worked
-        error!("Could not find terminal to open SSH connection to {}", display_name);
+            host_string.push_str(&connection_clone.hostname);
+            ssh_args.push(host_string.clone());
+            
+            // Add port if specified
+            if let Some(port) = connection_clone.port {
+                ssh_args.push("-p".to_string());
+                ssh_args.push(port.to_string());
+            }
+            
+            // Display connection info for logging
+            let display_name = if let Some(user) = &connection_clone.user {
+                format!("{}@{}", user, connection_clone.hostname)
+            } else {
+                connection_clone.hostname.clone()
+            };
+            
+            info!("Opening SSH connection to {}", display_name);
+            
+            // Try to open with alacritty first (preferred)
+            let mut alacritty_args = vec!["-e", "ssh"];
+            alacritty_args.extend(ssh_args.iter().map(|s| s.as_str()));
+            
+            match Command::new("alacritty")
+                .args(&alacritty_args)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn() {
+                    Ok(_) => {
+                        info!("Opened SSH connection with alacritty");
+                        return;
+                    }
+                    Err(_) => {}
+                }
+            
+            // Fallbacks to other terminals
+            let terminals = vec![
+                ("kitty", vec!["-e", "ssh"]),
+                ("gnome-terminal", vec!["--", "ssh"]),
+                ("xterm", vec!["-e", "ssh"]),
+                ("konsole", vec!["-e", "ssh"]),
+                ("terminator", vec!["-e", "ssh"]),
+                ("terminology", vec!["-e", "ssh"]),
+            ];
+            
+            for (terminal, base_args) in terminals {
+                let mut args = base_args.clone();
+                
+                // Add SSH arguments
+                args.extend(ssh_args.iter().map(|s| s.as_str()));
+                
+                match Command::new(terminal)
+                    .args(&args)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn() {
+                        Ok(_) => {
+                            info!("Opened SSH connection with {}", terminal);
+                            return;
+                        }
+                        Err(_) => continue
+                    }
+            }
+            
+            // If we got here, no terminal worked
+            error!("Could not find terminal to open SSH connection to {}", display_name);
+        });
     }
     
     fn open_ssh_config() {
+        // Get config path before moving to thread
         let config_path = Self::get_ssh_config_path();
         
-        // First try to open with a GUI editor
-        let editors = vec![
-            ("gedit", vec![]),
-            ("kate", vec![]),
-            ("mousepad", vec![]),
-            ("pluma", vec![]),
-            ("xed", vec![]),
-        ];
-        
-        let path_str = config_path.to_string_lossy();
-        
-        for (cmd, mut args) in editors {
-            args.push(path_str.as_ref());
-            if Command::new(cmd).args(&args).spawn().is_ok() {
-                return;
+        // Run in background thread to avoid blocking UI
+        thread::spawn(move || {
+            // First try to open with a GUI editor
+            let editors = vec![
+                ("gedit", vec![]),
+                ("kate", vec![]),
+                ("mousepad", vec![]),
+                ("pluma", vec![]),
+                ("xed", vec![]),
+            ];
+            
+            let path_str = config_path.to_string_lossy();
+            
+            for (cmd, mut args) in editors {
+                args.push(path_str.as_ref());
+                match Command::new(cmd)
+                    .args(&args)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn() {
+                        Ok(_) => {
+                            info!("Opened SSH config with {}", cmd);
+                            return;
+                        }
+                        Err(_) => continue
+                    }
             }
-        }
-        
-        // Fallback to terminal with editor
-        let terminal_editors = vec![
-            ("alacritty", vec!["-e", "nano", path_str.as_ref()]),
-            ("gnome-terminal", vec!["--", "nano", path_str.as_ref()]),
-            ("xterm", vec!["-e", "nano", path_str.as_ref()]),
-        ];
-        
-        for (terminal, args) in terminal_editors {
-            if Command::new(terminal).args(&args).spawn().is_ok() {
-                return;
+            
+            // Fallback to terminal with editor
+            let terminal_editors = vec![
+                ("alacritty", vec!["-e", "nano", path_str.as_ref()]),
+                ("gnome-terminal", vec!["--", "nano", path_str.as_ref()]),
+                ("xterm", vec!["-e", "nano", path_str.as_ref()]),
+            ];
+            
+            for (terminal, args) in terminal_editors {
+                match Command::new(terminal)
+                    .args(&args)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn() {
+                        Ok(_) => {
+                            info!("Opened SSH config with {} using nano", terminal);
+                            return;
+                        }
+                        Err(_) => continue
+                    }
             }
-        }
-        
-        error!("Could not find editor to open SSH config: {}", path_str);
+            
+            error!("Could not find editor to open SSH config: {}", path_str);
+        });
     }
     
     pub fn widget(&self) -> &Button {

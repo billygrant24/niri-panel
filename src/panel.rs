@@ -21,10 +21,10 @@ impl Panel {
     ) -> Result<Self> {
         let container = Box::new(Orientation::Horizontal, 0);
         container.add_css_class("panel");
-        container.set_margin_top(0);
-        container.set_margin_bottom(0);
-        container.set_margin_start(10);
-        container.set_margin_end(10);
+        container.set_margin_top(4);
+        container.set_margin_bottom(4);
+        container.set_margin_start(12);
+        container.set_margin_end(12);
         
         // Create left box for launcher and workspaces
         let left_box = Box::new(Orientation::Horizontal, 10);

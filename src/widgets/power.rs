@@ -175,46 +175,56 @@ impl Power {
             }
         });
         
-        let popover_box = Box::new(Orientation::Vertical, 0);
-        popover_box.set_margin_top(5);
-        popover_box.set_margin_bottom(5);
+        let popover_box = Box::new(Orientation::Vertical, 8);
+        popover_box.set_margin_start(12);
+        popover_box.set_margin_end(12);
+        popover_box.set_margin_top(12);
+        popover_box.set_margin_bottom(12);
         popover_box.set_size_request(350, -1);
         
         // User info section
         let user_box = Box::new(Orientation::Horizontal, 10);
-        user_box.set_margin_start(15);
-        user_box.set_margin_end(15);
-        user_box.set_margin_top(10);
-        user_box.set_margin_bottom(10);
+        user_box.add_css_class("power-user-box");
+        user_box.set_margin_start(8);
+        user_box.set_margin_end(8);
+        user_box.set_margin_top(8);
+        user_box.set_margin_bottom(8);
         
         let user_icon = Image::from_icon_name("avatar-default-symbolic");
-        user_icon.set_pixel_size(32);
+        user_icon.set_pixel_size(36);
         user_box.append(&user_icon);
         
         let user_label = Label::new(Some(&std::env::var("USER").unwrap_or_else(|_| "User".to_string())));
         user_label.add_css_class("power-user-label");
         user_label.set_halign(gtk4::Align::Start);
+        user_label.set_hexpand(true);
         user_box.append(&user_label);
         
         popover_box.append(&user_box);
         
-        // Separator
-        let separator = gtk4::Separator::new(Orientation::Horizontal);
-        popover_box.append(&separator);
-        
         // System Stats Section
         let stats_box = Box::new(Orientation::Vertical, 8);
-        stats_box.set_margin_start(15);
-        stats_box.set_margin_end(15);
-        stats_box.set_margin_top(10);
-        stats_box.set_margin_bottom(10);
         stats_box.add_css_class("power-stats-box");
+        stats_box.set_margin_start(8);
+        stats_box.set_margin_end(8);
+        stats_box.set_margin_top(8);
+        stats_box.set_margin_bottom(8);
         
         // Stats title
         let stats_title = Label::new(Some("System Information"));
         stats_title.add_css_class("power-stats-title");
         stats_title.set_halign(gtk4::Align::Start);
         stats_box.append(&stats_title);
+        
+        // Create a scrolled window for the stats
+        let stats_scroll = gtk4::ScrolledWindow::new();
+        stats_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+        stats_scroll.set_min_content_height(200);
+        stats_scroll.set_propagate_natural_height(true);
+        
+        // Inner container for the stats
+        let stats_inner = Box::new(Orientation::Vertical, 6);
+        stats_inner.set_margin_top(4);
         
         // Create stat labels
         let os_label = Self::create_stat_label("OS", "Loading...");
@@ -227,16 +237,18 @@ impl Power {
         let disk_label = Self::create_stat_label("Disk (/)", "0 GB / 0 GB");
         let packages_label = Self::create_stat_label("Packages", "Loading...");
         
-        stats_box.append(&os_label);
-        stats_box.append(&kernel_label);
-        stats_box.append(&hostname_label);
-        stats_box.append(&cpu_model_label);
-        stats_box.append(&uptime_label);
-        stats_box.append(&cpu_label);
-        stats_box.append(&memory_label);
-        stats_box.append(&disk_label);
-        stats_box.append(&packages_label);
+        stats_inner.append(&os_label);
+        stats_inner.append(&kernel_label);
+        stats_inner.append(&hostname_label);
+        stats_inner.append(&cpu_model_label);
+        stats_inner.append(&uptime_label);
+        stats_inner.append(&cpu_label);
+        stats_inner.append(&memory_label);
+        stats_inner.append(&disk_label);
+        stats_inner.append(&packages_label);
         
+        stats_scroll.set_child(Some(&stats_inner));
+        stats_box.append(&stats_scroll);
         popover_box.append(&stats_box);
         
         // Update stats immediately and schedule updates
@@ -277,16 +289,12 @@ impl Power {
             }
         });
         
-        // Separator
-        let separator2 = gtk4::Separator::new(Orientation::Horizontal);
-        popover_box.append(&separator2);
-        
         // Power actions - horizontal layout
         let actions_box = Box::new(Orientation::Horizontal, 0);
-        actions_box.set_margin_start(10);
-        actions_box.set_margin_end(10);
-        actions_box.set_margin_top(10);
-        actions_box.set_margin_bottom(10);
+        actions_box.set_margin_start(8);
+        actions_box.set_margin_end(8);
+        actions_box.set_margin_top(8);
+        actions_box.set_margin_bottom(8);
         actions_box.set_homogeneous(true);
         actions_box.add_css_class("power-actions-box");
         
@@ -330,7 +338,9 @@ impl Power {
     }
     
     fn create_stat_label(title: &str, initial_value: &str) -> Box {
-        let hbox = Box::new(Orientation::Horizontal, 0);
+        let hbox = Box::new(Orientation::Horizontal, 12);
+        hbox.set_margin_start(4);
+        hbox.set_margin_end(4);
         
         let title_label = Label::new(Some(title));
         title_label.add_css_class("power-stat-title");
@@ -340,6 +350,7 @@ impl Power {
         let value_label = Label::new(Some(initial_value));
         value_label.add_css_class("power-stat-value");
         value_label.set_halign(gtk4::Align::End);
+        value_label.set_margin_end(6);
         
         hbox.append(&title_label);
         hbox.append(&value_label);
@@ -616,12 +627,14 @@ impl Power {
         let button = Button::new();
         button.add_css_class("power-action-button");
         
-        let vbox = Box::new(Orientation::Vertical, 4);
-        vbox.set_margin_top(8);
-        vbox.set_margin_bottom(8);
+        let vbox = Box::new(Orientation::Vertical, 6);
+        vbox.set_margin_start(4);
+        vbox.set_margin_end(4);
+        vbox.set_margin_top(4);
+        vbox.set_margin_bottom(4);
         
         let icon = Image::from_icon_name(action.icon());
-        icon.set_pixel_size(24);
+        icon.set_pixel_size(22);
         vbox.append(&icon);
         
         let label = Label::new(Some(action.label()));
@@ -629,6 +642,13 @@ impl Power {
         vbox.append(&label);
         
         button.set_child(Some(&vbox));
+        
+        match action {
+            PowerAction::Shutdown | PowerAction::Reboot => {
+                button.add_css_class("destructive-action");
+            },
+            _ => {}
+        }
         
         button.connect_clicked(move |_| {
             if action.needs_confirmation() {
@@ -659,29 +679,45 @@ impl Power {
         dialog.add_css_class("power-confirm-dialog");
         
         // Center the window on screen
-        dialog.set_default_size(300, 150);
+        dialog.set_default_size(320, 170);
         
-        let confirm_box = Box::new(Orientation::Vertical, 20);
-        confirm_box.set_margin_top(30);
-        confirm_box.set_margin_bottom(30);
-        confirm_box.set_margin_start(30);
-        confirm_box.set_margin_end(30);
+        let confirm_box = Box::new(Orientation::Vertical, 24);
+        confirm_box.set_margin_start(24);
+        confirm_box.set_margin_end(24);
+        confirm_box.set_margin_top(24);
+        confirm_box.set_margin_bottom(24);
         
-        // Icon and message
+        // Header with icon and message
+        let header_box = Box::new(Orientation::Horizontal, 16);
+        header_box.set_margin_bottom(16);
+        
         let icon = Image::from_icon_name(action.icon());
         icon.set_pixel_size(48);
-        confirm_box.append(&icon);
+        
+        // For destructive actions, use a warning color
+        match &action {
+            PowerAction::Shutdown | PowerAction::Reboot => {
+                icon.add_css_class("destructive-action");
+            }
+            _ => {}
+        }
+        
+        header_box.append(&icon);
         
         // Confirmation message
         let message = Label::new(Some(&format!("Are you sure you want to {}?", action.label().to_lowercase())));
         message.add_css_class("power-confirm-message");
         message.set_wrap(true);
-        confirm_box.append(&message);
+        message.set_halign(gtk4::Align::Start);
+        message.set_hexpand(true);
+        header_box.append(&message);
+        
+        confirm_box.append(&header_box);
         
         // Buttons
-        let button_box = Box::new(Orientation::Horizontal, 10);
-        button_box.set_halign(gtk4::Align::Center);
-        button_box.set_margin_top(10);
+        let button_box = Box::new(Orientation::Horizontal, 12);
+        button_box.set_halign(gtk4::Align::End);
+        button_box.set_margin_top(16);
         
         let cancel_button = Button::with_label("Cancel");
         cancel_button.add_css_class("power-confirm-cancel");
