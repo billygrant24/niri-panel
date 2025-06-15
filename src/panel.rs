@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use crate::config::PanelConfig;
-use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search, Overview, Secrets, Bluetooth};
+use crate::widgets::{Clock, Workspaces, Launcher, Battery, Network, Sound, Places, Power, Search, Overview, Secrets, Bluetooth, Git};
 
 pub struct Panel {
     container: Box,
@@ -57,6 +57,8 @@ impl Panel {
             let places = Places::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(places.widget());
         }
+        
+      
         
         if config.show_search {
             let search = Search::new(window_weak.clone(), active_popovers.clone())?;
