@@ -381,30 +381,34 @@ impl Search {
                     Self::search_files(&query_clone, &config)
                 });
                 
-                // Create a timeout thread that will signal to terminate after 5 seconds
+                // Create a timeout thread that will signal to terminate after 10 seconds
                 thread::spawn(move || {
-                    thread::sleep(Duration::from_secs(5));
+                    thread::sleep(Duration::from_secs(10));
                     let _ = terminate_tx.send(());
                 });
                 
                 // Wait for either search completion or timeout
-                match terminate_rx.recv_timeout(Duration::from_secs(5)) {
-                    // Timeout or termination signal received
+                let results = match terminate_rx.recv_timeout(Duration::from_secs(10)) {
+                    // Timeout received but still wait for the search thread
                     Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {
-                        // Search took too long, return partial or empty results
-                        let results = Vec::new();
-                        let _ = tx.send(results);
+                        // Don't just return empty results, try to get what we have
+                        match search_thread.join() {
+                            Ok(results) => results,
+                            Err(_) => Vec::new()
+                        }
                     },
                     // Channel closed (shouldn't happen)
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         // Try to get results anyway
-                        if let Ok(results) = search_thread.join() {
-                            let _ = tx.send(results);
-                        } else {
-                            let _ = tx.send(Vec::new());
+                        match search_thread.join() {
+                            Ok(results) => results,
+                            Err(_) => Vec::new()
                         }
                     }
-                }
+                };
+                
+                // Send the results back to the main thread
+                let _ = tx.send(results);
             });
         };
         
@@ -599,7 +603,21 @@ impl Search {
                 continue;
             }
             
-            let mut cmd = Command::new("fd");
+            // Use exact fd path from system
+            let fd_path = Command::new("which")
+                .arg("fd")
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "fd".to_string());
+            
+            let mut cmd = Command::new(&fd_path);
             
             // Basic arguments
             let mut args = vec![
@@ -626,13 +644,10 @@ impl Search {
                 cmd.args(&["--ignore-case"]);
             }
             
-            // Build the search pattern
+            // Build the search pattern - simplified for better results
             let pattern = if query.contains(" ") {
-                // If contains spaces, search for files containing all terms
-                query.split_whitespace()
-                    .map(|term| format!(".*{}", regex::escape(term)))
-                    .collect::<Vec<_>>()
-                    .join(".*")
+                // For multi-word queries, use simpler pattern
+                query.to_string()
             } else {
                 // Simple term, just search for it
                 query.to_string()
@@ -640,6 +655,8 @@ impl Search {
             
             cmd.arg(&pattern);
             cmd.current_dir(inclusion);
+            
+            tracing::info!("Running fd search command: {:?} in {:?}", cmd, inclusion);
             
             if let Ok(output) = cmd.output() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
@@ -650,9 +667,16 @@ impl Search {
                         results.push(result);
                     }
                 }
+                
+                if !output.status.success() {
+                    tracing::warn!("fd command failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+            } else {
+                tracing::warn!("Failed to execute fd command");
             }
         }
         
+        tracing::info!("fd search found {} results", results.len());
         results
     }
     
@@ -664,7 +688,21 @@ impl Search {
                 continue;
             }
             
-            let mut cmd = Command::new("rg");
+            // Use exact ripgrep path from system
+            let rg_path = Command::new("which")
+                .arg("rg")
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "rg".to_string());
+            
+            let mut cmd = Command::new(&rg_path);
             
             // Basic arguments
             let mut args = vec![
@@ -684,7 +722,14 @@ impl Search {
                 cmd.args(&["--glob", &format!("!{}", exclusion)]);
             }
             
+            // Filter by pattern if needed
+            if !query.is_empty() {
+                cmd.args(&["--glob", &format!("*{}*", query)]);
+            }
+            
             cmd.current_dir(inclusion);
+            
+            tracing::info!("Running ripgrep search command: {:?} in {:?}", cmd, inclusion);
             
             if let Ok(output) = cmd.output() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
@@ -700,9 +745,16 @@ impl Search {
                         }
                     }
                 }
+                
+                if !output.status.success() && !output.stderr.is_empty() {
+                    tracing::warn!("ripgrep command failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+            } else {
+                tracing::warn!("Failed to execute ripgrep command");
             }
         }
         
+        tracing::info!("ripgrep search found {} results", results.len());
         results
     }
     
@@ -728,6 +780,17 @@ impl Search {
                 cmd.args(&["-not", "-path", r"*/\.*"]);
             }
             
+            // Add name pattern if there's a query
+            if !query.is_empty() {
+                let escaped_query = query.replace("[", "\\[")
+                                         .replace("]", "\\]")
+                                         .replace("*", "\\*")
+                                         .replace("?", "\\?");
+                cmd.args(&["-name", &format!("*{}*", escaped_query)]);
+            }
+            
+            tracing::info!("Running find search command: {:?} in {:?}", cmd, inclusion);
+            
             if let Ok(output) = cmd.output() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 
@@ -745,9 +808,16 @@ impl Search {
                         }
                     }
                 }
+                
+                if !output.status.success() && !output.stderr.is_empty() {
+                    tracing::warn!("find command failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+            } else {
+                tracing::warn!("Failed to execute find command");
             }
         }
         
+        tracing::info!("find search found {} results", results.len());
         results
     }
     
@@ -874,11 +944,44 @@ impl Search {
     }
     
     fn command_exists(cmd: &str) -> bool {
-        Command::new("which")
-            .arg(cmd)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+        // Use specific paths for common tools when available
+        match cmd {
+            "fd" => {
+                if let Ok(output) = Command::new("which").arg("fd").output() {
+                    if output.status.success() {
+                        return true;
+                    }
+                }
+                // Check specific Nix store locations
+                std::path::Path::new("/nix/store").exists() && 
+                Command::new("find")
+                    .args(["/nix/store", "-name", "fd", "-type", "f", "-executable"])
+                    .output()
+                    .map(|output| !output.stdout.is_empty())
+                    .unwrap_or(false)
+            },
+            "rg" => {
+                if let Ok(output) = Command::new("which").arg("rg").output() {
+                    if output.status.success() {
+                        return true;
+                    }
+                }
+                // Check specific Nix store locations
+                std::path::Path::new("/nix/store").exists() && 
+                Command::new("find")
+                    .args(["/nix/store", "-name", "rg", "-type", "f", "-executable"])
+                    .output()
+                    .map(|output| !output.stdout.is_empty())
+                    .unwrap_or(false)
+            },
+            _ => {
+                Command::new("which")
+                    .arg(cmd)
+                    .output()
+                    .map(|output| output.status.success())
+                    .unwrap_or(false)
+            }
+        }
     }
     
     fn create_result_row(result: SearchResult, popover_weak: gtk4::glib::WeakRef<Popover>) -> ListBoxRow {
