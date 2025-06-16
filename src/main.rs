@@ -93,7 +93,7 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
                 gtk4::style_context_add_provider_for_display(
                     &display,
                     &css_provider,
-                    gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                    gtk4::STYLE_PROVIDER_PRIORITY_USER,
                 );
                 info!("CSS styles loaded successfully");
             } else {

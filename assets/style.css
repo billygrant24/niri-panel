@@ -9,8 +9,7 @@ window {
 .panel button.sound,
 .panel button.bluetooth,
 .panel button.battery,
-.panel button.network,
-.panel button.git {
+.panel button.network {
     background: #4C566A66;
     border: 0px solid #4C566A;
     color: #ECEFF4;
@@ -23,8 +22,7 @@ window {
 .panel button.sound,
 .panel button.bluetooth,
 .panel button.battery,
-.panel button.network,
-.panel button.git {
+.panel button.network {
 	background: transparent;
 	border: 0;
 }
@@ -36,6 +34,15 @@ window {
 
 .panel-center {
 	padding: 0 10px;
+}
+
+button.workspace {
+	padding: 5px;
+}
+
+button.workspace.active {
+	background: #88C0D0;
+	color: #1e2430;
 }
 
 .network-copy-button {
