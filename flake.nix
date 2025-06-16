@@ -118,6 +118,11 @@
             
             buildInputs = with pkgs; [
               wayland
+              gtk4
+              gtk4-layer-shell
+              glib
+              cairo
+              pango
               libxkbcommon
             ];
             
