@@ -32,6 +32,10 @@ nix develop -c cargo run
 
 # Run in debug mode
 cargo run
+
+# Run the CLI control utility
+./target/release/niri-panel-ctrl list
+niri-panel-ctrl show launcher
 ```
 
 ### Development Commands

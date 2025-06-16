@@ -52,12 +52,17 @@
             cargo-watch
             rustfmt
             clippy
+            
+            # Include our own packages in the development environment
+            self.packages.${system}.default
+            self.packages.${system}.niri-panel-ctrl
           ];
 
           shellHook = ''
             echo "Niri Panel development environment"
             echo "Run 'cargo build' to build the panel"
             echo "Run 'cargo run' to start the panel"
+            echo "Run 'niri-panel-ctrl list' to see available widgets"
             
             # Set up icon theme paths
             export XDG_DATA_DIRS="${pkgs.adwaita-icon-theme}/share:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
@@ -74,28 +79,62 @@
           ];
         };
 
-        packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "niri-panel";
-          version = "0.1.0";
-          src = ./.;
-          cargoLock = {
-            lockFile = ./Cargo.lock;
+        packages = {
+          default = pkgs.rustPlatform.buildRustPackage {
+            pname = "niri-panel";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+            
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              wrapGAppsHook
+            ];
+            
+            buildInputs = with pkgs; [
+              wayland
+              gtk4
+              gtk4-layer-shell
+              glib
+              cairo
+              pango
+              libxkbcommon
+            ];
           };
           
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            wrapGAppsHook
-          ];
-          
-          buildInputs = with pkgs; [
-            wayland
-            gtk4
-            gtk4-layer-shell
-            glib
-            cairo
-            pango
-            libxkbcommon
-          ];
+          niri-panel-ctrl = pkgs.rustPlatform.buildRustPackage {
+            pname = "niri-panel-ctrl";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+            
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+            ];
+            
+            buildInputs = with pkgs; [
+              wayland
+              libxkbcommon
+            ];
+            
+            # Only build and install the niri-panel-ctrl binary
+            buildPhase = ''
+              runHook preBuild
+              cargo build --release --bin niri-panel-ctrl
+              runHook postBuild
+            '';
+            
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out/bin
+              cp target/release/niri-panel-ctrl $out/bin/
+              runHook postInstall
+            '';
+          };
         };
       });
 }

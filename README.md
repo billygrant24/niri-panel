@@ -18,7 +18,14 @@ A GTK4-based panel for the Niri Wayland compositor, providing system status and 
 ### Build with Nix (recommended)
 
 ```bash
+# Build main panel application
 ./build.sh
+
+# Or using nix directly
+nix build
+
+# Build the CLI control utility
+nix build .#niri-panel-ctrl
 ```
 
 ### Build with Cargo
@@ -35,6 +42,9 @@ nix develop -c cargo run
 
 # Run directly
 ./target/release/niri-panel
+
+# Use the CLI control utility
+./result/bin/niri-panel-ctrl list
 ```
 
 ## Configuration
@@ -44,6 +54,19 @@ Configuration is stored in `~/.config/niri-panel/config.toml`. The panel will cr
 ## CLI Control
 
 Niri Panel provides a command-line interface to control widget popovers. This allows integration with Niri, Sway, or other window managers.
+
+### Installation via Nix
+
+If you're using Nix, you can install the CLI control utility separately:
+
+```bash
+# Install just the CLI control utility
+nix profile install .#niri-panel-ctrl
+
+# Or install both the panel and control utility
+nix profile install .
+nix profile install .#niri-panel-ctrl
+```
 
 ### Show a widget popover
 
