@@ -16,8 +16,31 @@ pub struct PanelConfig {
     pub show_sound: bool,
     pub show_bluetooth: bool,
     pub show_power: bool,
+    pub show_git: bool,
     pub clock_format: String,
     pub launcher_icon: String,
+    pub git: GitConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitConfig {
+    pub repositories: Vec<GitRepository>,
+    pub services: Vec<GitService>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitRepository {
+    pub name: String,
+    pub path: String,
+    pub service: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitService {
+    pub name: String,
+    pub url_pattern: String,
+    pub issues_pattern: String,
 }
 
 impl Default for PanelConfig {
@@ -34,8 +57,37 @@ impl Default for PanelConfig {
             show_sound: true,
             show_bluetooth: true,
             show_power: true,
+            show_git: true,
             clock_format: "%a %b %e %l:%M %p".to_string(),
             launcher_icon: "view-app-grid-symbolic".to_string(),
+            git: GitConfig::default(),
+        }
+    }
+}
+
+impl Default for GitConfig {
+    fn default() -> Self {
+        Self {
+            repositories: vec![
+                GitRepository {
+                    name: "Example Repo".to_string(),
+                    path: "~/Projects/example-repo".to_string(),
+                    service: "github".to_string(),
+                    url: "https://github.com/username/example-repo".to_string(),
+                },
+            ],
+            services: vec![
+                GitService {
+                    name: "github".to_string(),
+                    url_pattern: "https://github.com/{owner}/{repo}".to_string(),
+                    issues_pattern: "https://github.com/{owner}/{repo}/issues".to_string(),
+                },
+                GitService {
+                    name: "gitlab".to_string(),
+                    url_pattern: "https://gitlab.com/{owner}/{repo}".to_string(),
+                    issues_pattern: "https://gitlab.com/{owner}/{repo}/issues".to_string(),
+                },
+            ],
         }
     }
 }

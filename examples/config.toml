@@ -1,0 +1,25 @@
+height = 40
+show_launcher = true
+show_places = true
+show_search = true
+show_workspaces = true
+show_clock = true
+show_battery = true
+show_network = true
+show_sound = true
+show_bluetooth = true
+show_power = true
+show_git = true
+clock_format = "%a %b %e %l:%M %p"
+launcher_icon = "view-app-grid-symbolic"
+
+[[git.services]]
+name = "gitlab"
+url_pattern = "https://gitlab.com/{owner}/{repo}"
+issues_pattern = "https://gitlab.com/{owner}/{repo}/issues"
+
+[[git.repositories]]
+name = "PVA"
+path = "~/Projects/CityPartnership/proxy-vote-apps"
+service = "gitlab"
+url = "https://gitlab.com/citypartnership/pva/proxy-vote-apps"

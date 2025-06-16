@@ -98,7 +98,6 @@ impl Workspaces {
         let popover = Popover::new();
         popover.set_parent(button);
         popover.add_css_class("workspace-popover");
-        popover.set_has_arrow(false);
         popover.set_autohide(true);
         popover.set_position(gtk4::PositionType::Bottom);
         

@@ -58,9 +58,10 @@ impl Panel {
             left_box.append(places.widget());
         }
         
-        // Git widget
-        let git = Git::new(window_weak.clone(), active_popovers.clone())?;
-        left_box.append(git.widget());
+        if config.show_git {
+            let git = Git::new(window_weak.clone(), active_popovers.clone(), &config)?;
+            left_box.append(git.widget());
+        }
         
         if config.show_search {
             let search = Search::new(window_weak.clone(), active_popovers.clone())?;
@@ -72,10 +73,10 @@ impl Panel {
             left_box.append(secrets.widget());
         // }
         
-        // if config.show_workspaces {
-        //     let workspaces = Workspaces::new()?;
-        //     left_box.append(workspaces.widget());
-        // }
+        if config.show_workspaces {
+            let workspaces = Workspaces::new()?;
+            left_box.append(workspaces.widget());
+        }
         
         if config.show_sound {
             let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
