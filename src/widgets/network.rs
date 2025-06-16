@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch, ScrolledWindow, Entry, Spinner, ApplicationWindow};
+use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch, ScrolledWindow, Entry, Spinner, ApplicationWindow, GestureClick};
 use gtk4_layer_shell::{LayerShell};
 use gtk4::glib::WeakRef;
 use glib::timeout_add_seconds_local;
@@ -8,6 +8,7 @@ use std::process::Command;
 use tracing::{warn, info};
 use std::rc::Rc;
 use std::cell::RefCell;
+use gtk4::gdk::Display;
 
 pub struct Network {
     button: Button,
@@ -20,6 +21,9 @@ struct NetworkInfo {
     ssid: Option<String>,
     signal_strength: Option<u8>,
     ip_address: Option<String>,
+    ipv6_address: Option<String>,
+    public_ip_address: Option<String>,
+    public_ipv6_address: Option<String>,
     connected: bool,
     vpn_active: bool,
     vpn_name: Option<String>,
@@ -147,8 +151,124 @@ impl Network {
     }
     
     fn update_network(icon: &Image, vpn_icon: &Image, label: &Label, popover_box: &Box, scanning: Rc<RefCell<bool>>) {
-        let info = Self::get_network_info();
+        // Get basic network info synchronously
+        let mut info = Self::get_network_info();
         let vpn_connections = Self::get_vpn_connections();
+        
+        // Use glib timeout to fetch public IPs in the background
+        // First, create a communication channel to send IP addresses back to the main thread
+        let (sender, receiver) = glib::MainContext::channel(glib::Priority::DEFAULT);
+        
+        // Use a standard timeout to fetch public IPs without blocking the UI
+        glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
+            // Clone sender for the timeout
+            let sender_timeout = sender.clone();
+            
+            // Get public IP addresses in a separate thread where we don't reference GTK objects
+            std::thread::spawn(move || {
+                // Set a timeout for the entire fetch operation
+                let (ipv4, ipv6) = Self::fetch_public_ip_addresses();
+                
+                // Send the results back to the main thread
+                let _ = sender.send((ipv4, ipv6));
+            });
+            
+            // Add a timeout to ensure we update the UI even if fetching takes too long
+            glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
+                // If we haven't received a response after 5 seconds, send empty results
+                let _ = sender_timeout.send((None, None));
+            });
+        });
+        
+        // Listen for the IP addresses on the main thread
+        let popover_box_weak = popover_box.downgrade();
+        receiver.attach(None, move |(public_ipv4, public_ipv6)| {
+            if let Some(popover_box) = popover_box_weak.upgrade() {
+                // Find the public IP rows and update them
+                for i in 0..popover_box.observe_children().n_items() {
+                    if let Some(child) = popover_box.observe_children().item(i) {
+                        if let Some(box_widget) = child.downcast_ref::<Box>() {
+                            if let Some(first_child) = box_widget.first_child() {
+                                if let Some(label) = first_child.downcast_ref::<Label>() {
+                                    // IPv4 row
+                                    if label.text() == "Public IPv4:" && public_ipv4.is_some() {
+                                        // Remove spinner and add value + copy button
+                                        if let Some(last_child) = box_widget.last_child() {
+                                            if last_child.is::<Spinner>() {
+                                                box_widget.remove(&last_child);
+                                                
+                                                // Show the public IP
+                                                let ip = public_ipv4.as_ref().unwrap();
+                                                let value_label = Label::new(Some(ip));
+                                                value_label.set_halign(gtk4::Align::Start);
+                                                value_label.set_selectable(true);
+                                                value_label.set_hexpand(true);
+                                                value_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                                                box_widget.append(&value_label);
+                                            
+                                                // Create copy button
+                                                let copy_button = Button::from_icon_name("edit-copy-symbolic");
+                                                copy_button.set_tooltip_text(Some(&format!("Copy {}", ip)));
+                                                copy_button.add_css_class("network-copy-button");
+                                                
+                                                let ip_copy = ip.to_string();
+                                                copy_button.connect_clicked(move |_| {
+                                                    if let Some(display) = Display::default() {
+                                                        let clipboard = display.clipboard();
+                                                        clipboard.set_text(&ip_copy);
+                                                        info!("Copied to clipboard: {}", ip_copy);
+                                                    }
+                                                });
+                                                
+                                                box_widget.append(&copy_button);
+                                            }
+                                        }
+                                    }
+                                    
+                                    // IPv6 row
+                                    if label.text() == "Public IPv6:" && public_ipv6.is_some() {
+                                        // Remove spinner and add value + copy button
+                                        if let Some(last_child) = box_widget.last_child() {
+                                            if last_child.is::<Spinner>() {
+                                                box_widget.remove(&last_child);
+                                                
+                                                // Show the public IP
+                                                let ip = public_ipv6.as_ref().unwrap();
+                                                let value_label = Label::new(Some(ip));
+                                                value_label.set_halign(gtk4::Align::Start);
+                                                value_label.set_selectable(true);
+                                                value_label.set_hexpand(true);
+                                                value_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                                                box_widget.append(&value_label);
+                                            
+                                                // Create copy button
+                                                let copy_button = Button::from_icon_name("edit-copy-symbolic");
+                                                copy_button.set_tooltip_text(Some(&format!("Copy {}", ip)));
+                                                copy_button.add_css_class("network-copy-button");
+                                                
+                                                let ip_copy = ip.to_string();
+                                                copy_button.connect_clicked(move |_| {
+                                                    if let Some(display) = Display::default() {
+                                                        let clipboard = display.clipboard();
+                                                        clipboard.set_text(&ip_copy);
+                                                        info!("Copied to clipboard: {}", ip_copy);
+                                                    }
+                                                });
+                                                
+                                                box_widget.append(&copy_button);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Continue receiving
+            glib::ControlFlow::Continue
+        });
         
         // Update icon
         let icon_name = Self::get_network_icon_name(&info);
@@ -206,26 +326,75 @@ impl Network {
         interface_label.set_halign(gtk4::Align::Start);
         popover_box.append(&interface_label);
         
-        // SSID for WiFi
+        // Network and signal strength section for WiFi
         if let Some(ssid) = &info.ssid {
-            let ssid_label = Label::new(Some(&format!("Network: {}", ssid)));
-            ssid_label.set_halign(gtk4::Align::Start);
-            popover_box.append(&ssid_label);
+            // Create SSID row with copy button
+            let ssid_row = Self::create_address_row("Network:", ssid);
+            popover_box.append(&ssid_row);
+            
+            // Signal strength
+            if let Some(signal) = info.signal_strength {
+                let signal_label = Label::new(Some(&format!("Signal: {}%", signal)));
+                signal_label.set_halign(gtk4::Align::Start);
+                popover_box.append(&signal_label);
+            }
         }
         
-        // Signal strength for WiFi
-        if let Some(signal) = info.signal_strength {
-            let signal_label = Label::new(Some(&format!("Signal: {}%", signal)));
-            signal_label.set_halign(gtk4::Align::Start);
-            popover_box.append(&signal_label);
-        }
+        // Separator for IP section
+        let separator = gtk4::Separator::new(Orientation::Horizontal);
+        separator.set_margin_top(5);
+        separator.set_margin_bottom(5);
+        popover_box.append(&separator);
         
-        // IP Address
+        // IP addresses header
+        let ip_header = Label::new(Some("IP Addresses"));
+        ip_header.add_css_class("network-section-title");
+        ip_header.set_halign(gtk4::Align::Start);
+        popover_box.append(&ip_header);
+        
+        // Local IP Addresses
         if let Some(ip) = &info.ip_address {
-            let ip_label = Label::new(Some(&format!("IP: {}", ip)));
-            ip_label.set_halign(gtk4::Align::Start);
-            popover_box.append(&ip_label);
+            let ip_row = Self::create_address_row("Local IPv4:", ip);
+            popover_box.append(&ip_row);
         }
+        
+        if let Some(ipv6) = &info.ipv6_address {
+            let ipv6_row = Self::create_address_row("Local IPv6:", ipv6);
+            popover_box.append(&ipv6_row);
+        }
+        
+        // Public IP Addresses with loading indicators
+        // IPv4 loading row
+        let ipv4_loading_row = Box::new(Orientation::Horizontal, 5);
+        ipv4_loading_row.add_css_class("network-address-box");
+        
+        let ipv4_label = Label::new(Some("Public IPv4:"));
+        ipv4_label.set_halign(gtk4::Align::Start);
+        ipv4_loading_row.append(&ipv4_label);
+        
+        let ipv4_spinner = Spinner::new();
+        ipv4_spinner.start();
+        ipv4_spinner.set_hexpand(true);
+        ipv4_spinner.set_halign(gtk4::Align::Start);
+        ipv4_loading_row.append(&ipv4_spinner);
+        
+        popover_box.append(&ipv4_loading_row);
+        
+        // IPv6 loading row
+        let ipv6_loading_row = Box::new(Orientation::Horizontal, 5);
+        ipv6_loading_row.add_css_class("network-address-box");
+        
+        let ipv6_label = Label::new(Some("Public IPv6:"));
+        ipv6_label.set_halign(gtk4::Align::Start);
+        ipv6_loading_row.append(&ipv6_label);
+        
+        let ipv6_spinner = Spinner::new();
+        ipv6_spinner.start();
+        ipv6_spinner.set_hexpand(true);
+        ipv6_spinner.set_halign(gtk4::Align::Start);
+        ipv6_loading_row.append(&ipv6_spinner);
+        
+        popover_box.append(&ipv6_loading_row);
         
         // WiFi Networks Section (only show for WiFi connections or when disconnected)
         if info.connection_type == ConnectionType::Wifi || info.connection_type == ConnectionType::Disconnected {
@@ -742,6 +911,9 @@ impl Network {
             ssid: None,
             signal_strength: None,
             ip_address: None,
+            ipv6_address: None,
+            public_ip_address: None,
+            public_ipv6_address: None,
             connected: false,
             vpn_active: false,
             vpn_name: None,
@@ -835,6 +1007,35 @@ impl Network {
             .spawn();
     }
     
+    fn fetch_public_ip_addresses() -> (Option<String>, Option<String>) {
+        let mut ipv4 = None;
+        let mut ipv6 = None;
+        
+        // Try to fetch public IPv4 address
+        if let Ok(output) = Command::new("curl")
+            .args(&["--silent", "--max-time", "1", "https://api.ipify.org"])
+            .output()
+        {
+            let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !ip_str.is_empty() {
+                ipv4 = Some(ip_str);
+            }
+        }
+        
+        // Try to fetch public IPv6 address
+        if let Ok(output) = Command::new("curl")
+            .args(&["--silent", "--max-time", "1", "https://api6.ipify.org"])
+            .output()
+        {
+            let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !ip_str.is_empty() && !ip_str.contains("error") && !ip_str.contains("not found") {
+                ipv6 = Some(ip_str);
+            }
+        }
+        
+        (ipv4, ipv6)
+    }
+    
     fn get_interface_info(interface: &str) -> NetworkInfo {
         let mut info = NetworkInfo {
             interface: interface.to_string(),
@@ -842,6 +1043,9 @@ impl Network {
             ssid: None,
             signal_strength: None,
             ip_address: None,
+            ipv6_address: None,
+            public_ip_address: None,
+            public_ipv6_address: None,
             connected: true,
             vpn_active: false,
             vpn_name: None,
@@ -906,23 +1110,37 @@ impl Network {
             info.connection_type = ConnectionType::Ethernet;
         }
         
-        // Get IP address
+        // Get local IP addresses
         if let Ok(output) = Command::new("ip")
             .args(&["addr", "show", interface])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
             for line in output_str.lines() {
-                if line.trim().starts_with("inet ") {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
+                let line_trimmed = line.trim();
+                if line_trimmed.starts_with("inet ") && info.ip_address.is_none() {
+                    let parts: Vec<&str> = line_trimmed.split_whitespace().collect();
                     if let Some(ip) = parts.get(1) {
-                        info.ip_address = Some(ip.split('/').next().unwrap_or(ip).to_string());
-                        break;
+                        // Filter out IPv4 link-local addresses (169.254.x.x)
+                        let ip_clean = ip.split('/').next().unwrap_or(ip).to_string();
+                        if !ip_clean.starts_with("169.254.") {
+                            info.ip_address = Some(ip_clean);
+                        }
+                    }
+                } else if line_trimmed.starts_with("inet6 ") && info.ipv6_address.is_none() {
+                    let parts: Vec<&str> = line_trimmed.split_whitespace().collect();
+                    if let Some(ip) = parts.get(1) {
+                        let ip_clean = ip.split('/').next().unwrap_or(ip).to_string();
+                        // Filter out link-local addresses (fe80::) and temporary addresses
+                        if !ip_clean.starts_with("fe80:") && !parts.iter().any(|p| *p == "temporary") {
+                            info.ipv6_address = Some(ip_clean);
+                        }
                     }
                 }
             }
         }
         
+        // Public IPs will be fetched asynchronously in update_network
         info
     }
     
@@ -993,6 +1211,46 @@ impl Network {
                 .args(&["radio", "wifi", new_state])
                 .spawn();
         }
+    }
+    
+    fn create_address_row(label_text: &str, address: &str) -> Box {
+        let container = Box::new(Orientation::Horizontal, 5);
+        container.add_css_class("network-address-box");
+        
+        // Create label with address
+        let label = Label::new(Some(label_text));
+        label.set_halign(gtk4::Align::Start);
+        label.set_width_chars(10);
+        container.append(&label);
+        
+        // Create value label
+        let value_label = Label::new(Some(address));
+        value_label.set_halign(gtk4::Align::Start);
+        value_label.set_selectable(true);
+        value_label.set_hexpand(true);
+        value_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        container.append(&value_label);
+        
+        // Create copy button
+        let copy_button = Button::from_icon_name("edit-copy-symbolic");
+        copy_button.set_tooltip_text(Some(&format!("Copy {}", address)));
+        copy_button.add_css_class("network-copy-button");
+        
+        // Clone address for closure
+        let address_copy = address.to_string();
+        
+        // Connect button click
+        copy_button.connect_clicked(move |_| {
+            // Copy to clipboard
+            if let Some(display) = Display::default() {
+                let clipboard = display.clipboard();
+                clipboard.set_text(&address_copy);
+                info!("Copied to clipboard: {}", address_copy);
+            }
+        });
+        
+        container.append(&copy_button);
+        container
     }
     
     pub fn widget(&self) -> &Button {
