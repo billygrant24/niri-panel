@@ -1,14 +1,17 @@
-use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, ListBox, ListBoxRow, Switch, ScrolledWindow, Entry, Spinner, ApplicationWindow, GestureClick};
-use gtk4_layer_shell::{LayerShell};
-use gtk4::glib::WeakRef;
-use glib::timeout_add_seconds_local;
 use anyhow::Result;
-use std::process::Command;
-use tracing::{warn, info};
-use std::rc::Rc;
-use std::cell::RefCell;
+use glib::timeout_add_seconds_local;
 use gtk4::gdk::Display;
+use gtk4::glib::WeakRef;
+use gtk4::prelude::*;
+use gtk4::{
+    ApplicationWindow, Box, Button, Entry, GestureClick, Image, Label, ListBox, ListBoxRow,
+    Orientation, Popover, ScrolledWindow, Spinner, Switch,
+};
+use gtk4_layer_shell::LayerShell;
+use std::cell::RefCell;
+use std::process::Command;
+use std::rc::Rc;
+use tracing::{info, warn};
 
 pub struct Network {
     button: Button,
@@ -56,31 +59,31 @@ struct WifiNetwork {
 impl Network {
     pub fn new(
         window_weak: WeakRef<ApplicationWindow>,
-        active_popovers: Rc<RefCell<i32>>
+        active_popovers: Rc<RefCell<i32>>,
     ) -> Result<Self> {
         let button = Button::new();
         button.add_css_class("network");
-        
+
         let container = Box::new(Orientation::Horizontal, 5);
-        
+
         let icon = Image::new();
         let vpn_icon = Image::new();
         vpn_icon.set_visible(false);
         vpn_icon.add_css_class("network-vpn-icon");
-        
+
         let label = Label::new(None);
         label.add_css_class("network-label");
-        
+
         container.append(&icon);
         container.append(&vpn_icon);
         container.append(&label);
         button.set_child(Some(&container));
-        
+
         // Create popover for network details
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("network-popover");
-        
+
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();
         let active_popovers_show = active_popovers.clone();
@@ -88,11 +91,13 @@ impl Network {
             *active_popovers_show.borrow_mut() += 1;
             if let Some(window) = window_weak_show.upgrade() {
                 window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
-                info!("Network popover shown - keyboard mode set to OnDemand (active popovers: {})", 
-                      *active_popovers_show.borrow());
+                info!(
+                    "Network popover shown - keyboard mode set to OnDemand (active popovers: {})",
+                    *active_popovers_show.borrow()
+                );
             }
         });
-        
+
         // Handle popover hide event - disable keyboard mode if no other popovers
         let window_weak_hide = window_weak.clone();
         let active_popovers_hide = active_popovers.clone();
@@ -105,25 +110,28 @@ impl Network {
                     info!("Network popover hidden - keyboard mode set to None");
                 }
             } else {
-                info!("Network popover hidden - keeping keyboard mode (active popovers: {})", count);
+                info!(
+                    "Network popover hidden - keeping keyboard mode (active popovers: {})",
+                    count
+                );
             }
         });
-        
+
         let popover_box = Box::new(Orientation::Vertical, 10);
         popover_box.set_margin_top(10);
         popover_box.set_margin_bottom(10);
         popover_box.set_margin_start(10);
         popover_box.set_margin_end(10);
         popover_box.set_size_request(350, -1);
-        
+
         popover.set_child(Some(&popover_box));
-        
+
         // Store scanning state
         let scanning = Rc::new(RefCell::new(false));
-        
+
         // Update network status immediately
         Self::update_network(&icon, &vpn_icon, &label, &popover_box, scanning.clone());
-        
+
         // Update every 5 seconds
         let icon_weak = icon.downgrade();
         let vpn_icon_weak = vpn_icon.downgrade();
@@ -131,55 +139,71 @@ impl Network {
         let popover_box_weak = popover_box.downgrade();
         let scanning_clone = scanning.clone();
         timeout_add_seconds_local(5, move || {
-            if let (Some(icon), Some(vpn_icon), Some(label), Some(popover_box)) = 
-                (icon_weak.upgrade(), vpn_icon_weak.upgrade(), label_weak.upgrade(), popover_box_weak.upgrade()) {
+            if let (Some(icon), Some(vpn_icon), Some(label), Some(popover_box)) = (
+                icon_weak.upgrade(),
+                vpn_icon_weak.upgrade(),
+                label_weak.upgrade(),
+                popover_box_weak.upgrade(),
+            ) {
                 if !*scanning_clone.borrow() {
-                    Self::update_network(&icon, &vpn_icon, &label, &popover_box, scanning_clone.clone());
+                    Self::update_network(
+                        &icon,
+                        &vpn_icon,
+                        &label,
+                        &popover_box,
+                        scanning_clone.clone(),
+                    );
                 }
                 glib::ControlFlow::Continue
             } else {
                 glib::ControlFlow::Break
             }
         });
-        
+
         // Show popover on click
         button.connect_clicked(move |_| {
             popover.popup();
         });
-        
+
         Ok(Self { button })
     }
-    
-    fn update_network(icon: &Image, vpn_icon: &Image, label: &Label, popover_box: &Box, scanning: Rc<RefCell<bool>>) {
+
+    fn update_network(
+        icon: &Image,
+        vpn_icon: &Image,
+        label: &Label,
+        popover_box: &Box,
+        scanning: Rc<RefCell<bool>>,
+    ) {
         // Get basic network info synchronously
         let mut info = Self::get_network_info();
         let vpn_connections = Self::get_vpn_connections();
-        
+
         // Use glib timeout to fetch public IPs in the background
         // First, create a communication channel to send IP addresses back to the main thread
         let (sender, receiver) = glib::MainContext::channel(glib::Priority::DEFAULT);
-        
+
         // Use a standard timeout to fetch public IPs without blocking the UI
         glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
             // Clone sender for the timeout
             let sender_timeout = sender.clone();
-            
+
             // Get public IP addresses in a separate thread where we don't reference GTK objects
             std::thread::spawn(move || {
                 // Set a timeout for the entire fetch operation
                 let (ipv4, ipv6) = Self::fetch_public_ip_addresses();
-                
+
                 // Send the results back to the main thread
                 let _ = sender.send((ipv4, ipv6));
             });
-            
+
             // Add a timeout to ensure we update the UI even if fetching takes too long
             glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
                 // If we haven't received a response after 5 seconds, send empty results
                 let _ = sender_timeout.send((None, None));
             });
         });
-        
+
         // Listen for the IP addresses on the main thread
         let popover_box_weak = popover_box.downgrade();
         receiver.attach(None, move |(public_ipv4, public_ipv6)| {
@@ -196,21 +220,26 @@ impl Network {
                                         if let Some(last_child) = box_widget.last_child() {
                                             if last_child.is::<Spinner>() {
                                                 box_widget.remove(&last_child);
-                                                
+
                                                 // Show the public IP
                                                 let ip = public_ipv4.as_ref().unwrap();
                                                 let value_label = Label::new(Some(ip));
                                                 value_label.set_halign(gtk4::Align::Start);
                                                 value_label.set_selectable(true);
                                                 value_label.set_hexpand(true);
-                                                value_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                                                value_label
+                                                    .set_ellipsize(gtk4::pango::EllipsizeMode::End);
                                                 box_widget.append(&value_label);
-                                            
+
                                                 // Create copy button
-                                                let copy_button = Button::from_icon_name("edit-copy-symbolic");
-                                                copy_button.set_tooltip_text(Some(&format!("Copy {}", ip)));
+                                                let copy_button =
+                                                    Button::from_icon_name("edit-copy-symbolic");
+                                                copy_button.set_tooltip_text(Some(&format!(
+                                                    "Copy {}",
+                                                    ip
+                                                )));
                                                 copy_button.add_css_class("network-copy-button");
-                                                
+
                                                 let ip_copy = ip.to_string();
                                                 copy_button.connect_clicked(move |_| {
                                                     if let Some(display) = Display::default() {
@@ -219,33 +248,38 @@ impl Network {
                                                         info!("Copied to clipboard: {}", ip_copy);
                                                     }
                                                 });
-                                                
+
                                                 box_widget.append(&copy_button);
                                             }
                                         }
                                     }
-                                    
+
                                     // IPv6 row
                                     if label.text() == "Public IPv6:" && public_ipv6.is_some() {
                                         // Remove spinner and add value + copy button
                                         if let Some(last_child) = box_widget.last_child() {
                                             if last_child.is::<Spinner>() {
                                                 box_widget.remove(&last_child);
-                                                
+
                                                 // Show the public IP
                                                 let ip = public_ipv6.as_ref().unwrap();
                                                 let value_label = Label::new(Some(ip));
                                                 value_label.set_halign(gtk4::Align::Start);
                                                 value_label.set_selectable(true);
                                                 value_label.set_hexpand(true);
-                                                value_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                                                value_label
+                                                    .set_ellipsize(gtk4::pango::EllipsizeMode::End);
                                                 box_widget.append(&value_label);
-                                            
+
                                                 // Create copy button
-                                                let copy_button = Button::from_icon_name("edit-copy-symbolic");
-                                                copy_button.set_tooltip_text(Some(&format!("Copy {}", ip)));
+                                                let copy_button =
+                                                    Button::from_icon_name("edit-copy-symbolic");
+                                                copy_button.set_tooltip_text(Some(&format!(
+                                                    "Copy {}",
+                                                    ip
+                                                )));
                                                 copy_button.add_css_class("network-copy-button");
-                                                
+
                                                 let ip_copy = ip.to_string();
                                                 copy_button.connect_clicked(move |_| {
                                                     if let Some(display) = Display::default() {
@@ -254,7 +288,7 @@ impl Network {
                                                         info!("Copied to clipboard: {}", ip_copy);
                                                     }
                                                 });
-                                                
+
                                                 box_widget.append(&copy_button);
                                             }
                                         }
@@ -265,24 +299,27 @@ impl Network {
                     }
                 }
             }
-            
+
             // Continue receiving
             glib::ControlFlow::Continue
         });
-        
+
         // Update icon
         let icon_name = Self::get_network_icon_name(&info);
         icon.set_from_icon_name(Some(&icon_name));
-        
+
         // Update VPN icon
         if info.vpn_active {
             vpn_icon.set_from_icon_name(Some("network-vpn-symbolic"));
             vpn_icon.set_visible(true);
-            vpn_icon.set_tooltip_text(Some(&format!("VPN: {}", info.vpn_name.as_ref().unwrap_or(&"Active".to_string()))));
+            vpn_icon.set_tooltip_text(Some(&format!(
+                "VPN: {}",
+                info.vpn_name.as_ref().unwrap_or(&"Active".to_string())
+            )));
         } else {
             vpn_icon.set_visible(false);
         }
-        
+
         // Update label
         let label_text = match &info.connection_type {
             ConnectionType::Wifi => {
@@ -306,32 +343,36 @@ impl Network {
             ConnectionType::Disconnected => "Disconnected".to_string(),
         };
         label.set_text(&label_text);
-        
+
         // Update popover content
         while let Some(child) = popover_box.first_child() {
             popover_box.remove(&child);
         }
-        
+
         // Connection status
         let status_label = Label::new(Some(&format!(
             "Status: {}",
-            if info.connected { "Connected" } else { "Disconnected" }
+            if info.connected {
+                "Connected"
+            } else {
+                "Disconnected"
+            }
         )));
         status_label.set_halign(gtk4::Align::Start);
         status_label.add_css_class("network-status");
         popover_box.append(&status_label);
-        
+
         // Interface
         let interface_label = Label::new(Some(&format!("Interface: {}", info.interface)));
         interface_label.set_halign(gtk4::Align::Start);
         popover_box.append(&interface_label);
-        
+
         // Network and signal strength section for WiFi
         if let Some(ssid) = &info.ssid {
             // Create SSID row with copy button
             let ssid_row = Self::create_address_row("Network:", ssid);
             popover_box.append(&ssid_row);
-            
+
             // Signal strength
             if let Some(signal) = info.signal_strength {
                 let signal_label = Label::new(Some(&format!("Signal: {}%", signal)));
@@ -339,103 +380,111 @@ impl Network {
                 popover_box.append(&signal_label);
             }
         }
-        
+
         // Separator for IP section
         let separator = gtk4::Separator::new(Orientation::Horizontal);
         separator.set_margin_top(5);
         separator.set_margin_bottom(5);
         popover_box.append(&separator);
-        
+
         // IP addresses header
         let ip_header = Label::new(Some("IP Addresses"));
         ip_header.add_css_class("network-section-title");
         ip_header.set_halign(gtk4::Align::Start);
         popover_box.append(&ip_header);
-        
+
         // Local IP Addresses
         if let Some(ip) = &info.ip_address {
             let ip_row = Self::create_address_row("Local IPv4:", ip);
             popover_box.append(&ip_row);
         }
-        
+
         if let Some(ipv6) = &info.ipv6_address {
             let ipv6_row = Self::create_address_row("Local IPv6:", ipv6);
             popover_box.append(&ipv6_row);
         }
-        
+
         // Public IP Addresses with loading indicators
         // IPv4 loading row
         let ipv4_loading_row = Box::new(Orientation::Horizontal, 5);
         ipv4_loading_row.add_css_class("network-address-box");
-        
+
         let ipv4_label = Label::new(Some("Public IPv4:"));
         ipv4_label.set_halign(gtk4::Align::Start);
         ipv4_loading_row.append(&ipv4_label);
-        
+
         let ipv4_spinner = Spinner::new();
         ipv4_spinner.start();
         ipv4_spinner.set_hexpand(true);
         ipv4_spinner.set_halign(gtk4::Align::Start);
         ipv4_loading_row.append(&ipv4_spinner);
-        
+
         popover_box.append(&ipv4_loading_row);
-        
+
         // IPv6 loading row
         let ipv6_loading_row = Box::new(Orientation::Horizontal, 5);
         ipv6_loading_row.add_css_class("network-address-box");
-        
+
         let ipv6_label = Label::new(Some("Public IPv6:"));
         ipv6_label.set_halign(gtk4::Align::Start);
         ipv6_loading_row.append(&ipv6_label);
-        
+
         let ipv6_spinner = Spinner::new();
         ipv6_spinner.start();
         ipv6_spinner.set_hexpand(true);
         ipv6_spinner.set_halign(gtk4::Align::Start);
         ipv6_loading_row.append(&ipv6_spinner);
-        
+
         popover_box.append(&ipv6_loading_row);
-        
+
         // WiFi Networks Section (only show for WiFi connections or when disconnected)
-        if info.connection_type == ConnectionType::Wifi || info.connection_type == ConnectionType::Disconnected {
+        if info.connection_type == ConnectionType::Wifi
+            || info.connection_type == ConnectionType::Disconnected
+        {
             // Separator
             let separator = gtk4::Separator::new(Orientation::Horizontal);
             separator.set_margin_top(10);
             separator.set_margin_bottom(10);
             popover_box.append(&separator);
-            
+
             let wifi_header = Box::new(Orientation::Horizontal, 10);
-            
+
             let wifi_label = Label::new(Some("WiFi Networks"));
             wifi_label.set_halign(gtk4::Align::Start);
             wifi_label.set_hexpand(true);
             wifi_label.add_css_class("network-section-title");
             wifi_header.append(&wifi_label);
-            
+
             let refresh_button = Button::from_icon_name("view-refresh-symbolic");
             refresh_button.add_css_class("network-refresh-button");
             refresh_button.set_tooltip_text(Some("Scan for networks"));
-            
+
             let popover_box_weak = popover_box.downgrade();
             let scanning_for_refresh = scanning.clone();
             refresh_button.connect_clicked(move |button| {
                 if let Some(popover_box) = popover_box_weak.upgrade() {
                     *scanning_for_refresh.borrow_mut() = true;
                     button.set_sensitive(false);
-                    
+
                     // Start scan
                     let _ = Command::new("nmcli")
                         .args(&["device", "wifi", "rescan"])
                         .spawn();
-                    
+
                     // Show scanning state
-                    if let Some(wifi_list_widget) = popover_box.observe_children().item(popover_box.observe_children().n_items() - 1) {
+                    if let Some(wifi_list_widget) = popover_box
+                        .observe_children()
+                        .item(popover_box.observe_children().n_items() - 1)
+                    {
                         if let Some(scroll) = wifi_list_widget.downcast_ref::<ScrolledWindow>() {
-                            if let Some(list) = scroll.child().and_then(|w| w.downcast_ref::<ListBox>().cloned()) {
+                            if let Some(list) = scroll
+                                .child()
+                                .and_then(|w| w.downcast_ref::<ListBox>().cloned())
+                            {
                                 while let Some(child) = list.first_child() {
                                     list.remove(&child);
                                 }
-                                
+
                                 let scanning_row = ListBoxRow::new();
                                 let scanning_box = Box::new(Orientation::Horizontal, 10);
                                 scanning_box.set_margin_start(10);
@@ -443,51 +492,53 @@ impl Network {
                                 scanning_box.set_margin_top(20);
                                 scanning_box.set_margin_bottom(20);
                                 scanning_box.set_halign(gtk4::Align::Center);
-                                
+
                                 let spinner = Spinner::new();
                                 spinner.start();
                                 scanning_box.append(&spinner);
-                                
+
                                 let scanning_label = Label::new(Some("Scanning for networks..."));
                                 scanning_label.add_css_class("dim-label");
                                 scanning_box.append(&scanning_label);
-                                
+
                                 scanning_row.set_child(Some(&scanning_box));
                                 list.append(&scanning_row);
                             }
                         }
                     }
-                    
+
                     // Wait and update
                     let popover_box_weak2 = popover_box.downgrade();
                     let button_weak = button.downgrade();
                     let scanning_for_timeout = scanning_for_refresh.clone();
                     glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
                         *scanning_for_timeout.borrow_mut() = false;
-                        if let (Some(popover_box), Some(button)) = (popover_box_weak2.upgrade(), button_weak.upgrade()) {
+                        if let (Some(popover_box), Some(button)) =
+                            (popover_box_weak2.upgrade(), button_weak.upgrade())
+                        {
                             button.set_sensitive(true);
                             Self::update_wifi_list(&popover_box);
                         }
                     });
                 }
             });
-            
+
             wifi_header.append(&refresh_button);
             popover_box.append(&wifi_header);
-            
+
             // WiFi list with scroll
             let wifi_scroll = ScrolledWindow::new();
             wifi_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
             wifi_scroll.set_min_content_height(100);
             wifi_scroll.set_max_content_height(300);
-            
+
             let wifi_list = ListBox::new();
             wifi_list.add_css_class("network-wifi-list");
             wifi_list.set_selection_mode(gtk4::SelectionMode::None);
-            
+
             // Get available networks
             let networks = Self::get_wifi_networks();
-            
+
             if networks.is_empty() {
                 let empty_row = ListBoxRow::new();
                 let empty_label = Label::new(Some("No networks found"));
@@ -502,11 +553,11 @@ impl Network {
                     wifi_list.append(&row);
                 }
             }
-            
+
             wifi_scroll.set_child(Some(&wifi_list));
             popover_box.append(&wifi_scroll);
         }
-        
+
         // VPN Section
         if !vpn_connections.is_empty() || info.vpn_active {
             // Separator
@@ -514,40 +565,40 @@ impl Network {
             separator.set_margin_top(10);
             separator.set_margin_bottom(10);
             popover_box.append(&separator);
-            
+
             let vpn_label = Label::new(Some("VPN Connections"));
             vpn_label.set_halign(gtk4::Align::Start);
             vpn_label.add_css_class("network-section-title");
             popover_box.append(&vpn_label);
-            
+
             // VPN list
             let vpn_list = ListBox::new();
             vpn_list.add_css_class("network-vpn-list");
             vpn_list.set_selection_mode(gtk4::SelectionMode::None);
-            
+
             for vpn in &vpn_connections {
                 let row = ListBoxRow::new();
                 row.add_css_class("network-vpn-row");
-                
+
                 let hbox = Box::new(Orientation::Horizontal, 10);
                 hbox.set_margin_start(5);
                 hbox.set_margin_end(5);
                 hbox.set_margin_top(8);
                 hbox.set_margin_bottom(8);
-                
+
                 let vpn_icon = Image::from_icon_name("network-vpn-symbolic");
                 vpn_icon.set_pixel_size(16);
                 hbox.append(&vpn_icon);
-                
+
                 let vpn_name_label = Label::new(Some(&vpn.name));
                 vpn_name_label.set_hexpand(true);
                 vpn_name_label.set_halign(gtk4::Align::Start);
                 hbox.append(&vpn_name_label);
-                
+
                 let switch = Switch::new();
                 switch.set_active(vpn.active);
                 switch.set_valign(gtk4::Align::Center);
-                
+
                 let vpn_uuid = vpn.uuid.clone();
                 let vpn_active = vpn.active;
                 switch.connect_state_set(move |_, state| {
@@ -556,59 +607,66 @@ impl Network {
                     }
                     glib::Propagation::Proceed
                 });
-                
+
                 hbox.append(&switch);
                 row.set_child(Some(&hbox));
                 vpn_list.append(&row);
             }
-            
+
             popover_box.append(&vpn_list);
         }
-        
+
         // Separator
         let separator = gtk4::Separator::new(Orientation::Horizontal);
         separator.set_margin_top(10);
         separator.set_margin_bottom(10);
         popover_box.append(&separator);
-        
+
         // Action buttons
         let actions_box = Box::new(Orientation::Vertical, 5);
-        
+
         // Network settings button
         let settings_button = Button::with_label("Network Settings");
         settings_button.connect_clicked(|_| {
             Self::open_network_settings();
         });
         actions_box.append(&settings_button);
-        
+
         // WiFi toggle (if applicable)
-        if info.connection_type == ConnectionType::Wifi || info.connection_type == ConnectionType::Disconnected {
-            let wifi_toggle = Button::with_label(
-                if info.connection_type == ConnectionType::Wifi { "Disconnect WiFi" } else { "Connect WiFi" }
-            );
+        if info.connection_type == ConnectionType::Wifi
+            || info.connection_type == ConnectionType::Disconnected
+        {
+            let wifi_toggle = Button::with_label(if info.connection_type == ConnectionType::Wifi {
+                "Disconnect WiFi"
+            } else {
+                "Connect WiFi"
+            });
             wifi_toggle.connect_clicked(move |_| {
                 Self::toggle_wifi();
             });
             actions_box.append(&wifi_toggle);
         }
-        
+
         popover_box.append(&actions_box);
     }
-    
+
     fn update_wifi_list(popover_box: &Box) {
         // Find the wifi list in the popover
         for i in 0..popover_box.observe_children().n_items() {
             if let Some(widget) = popover_box.observe_children().item(i) {
                 if let Some(scroll) = widget.downcast_ref::<ScrolledWindow>() {
-                    if let Some(list) = scroll.child().and_then(|w| w.downcast_ref::<ListBox>().cloned()) {
+                    if let Some(list) = scroll
+                        .child()
+                        .and_then(|w| w.downcast_ref::<ListBox>().cloned())
+                    {
                         // Clear existing items
                         while let Some(child) = list.first_child() {
                             list.remove(&child);
                         }
-                        
+
                         // Get fresh network list
                         let networks = Self::get_wifi_networks();
-                        
+
                         if networks.is_empty() {
                             let empty_row = ListBoxRow::new();
                             let empty_label = Label::new(Some("No networks found"));
@@ -629,49 +687,53 @@ impl Network {
             }
         }
     }
-    
+
     fn create_wifi_row(network: &WifiNetwork) -> ListBoxRow {
         let row = ListBoxRow::new();
         row.add_css_class("network-wifi-row");
-        
+
         let hbox = Box::new(Orientation::Horizontal, 10);
         hbox.set_margin_start(5);
         hbox.set_margin_end(5);
         hbox.set_margin_top(8);
         hbox.set_margin_bottom(8);
-        
+
         // Signal icon
         let signal_icon = Image::from_icon_name(Self::get_wifi_signal_icon(network.signal));
         signal_icon.set_pixel_size(16);
         hbox.append(&signal_icon);
-        
+
         // Network name and info
         let info_box = Box::new(Orientation::Vertical, 2);
         info_box.set_hexpand(true);
-        
+
         let name_label = Label::new(Some(&network.ssid));
         name_label.set_halign(gtk4::Align::Start);
         if network.connected {
             name_label.add_css_class("network-connected");
         }
         info_box.append(&name_label);
-        
+
         let status_label = if network.connected {
             Label::new(Some("Connected"))
         } else {
-            Label::new(Some(&format!("{}%{}", network.signal, if network.secured { " • Secured" } else { "" })))
+            Label::new(Some(&format!(
+                "{}%{}",
+                network.signal,
+                if network.secured { " • Secured" } else { "" }
+            )))
         };
         status_label.set_halign(gtk4::Align::Start);
         status_label.add_css_class("network-wifi-status");
         info_box.append(&status_label);
-        
+
         hbox.append(&info_box);
-        
+
         // Connect/Disconnect button
         if !network.connected {
             let connect_button = Button::with_label("Connect");
             connect_button.add_css_class("network-connect-button");
-            
+
             let ssid = network.ssid.clone();
             let secured = network.secured;
             connect_button.connect_clicked(move |button| {
@@ -681,24 +743,24 @@ impl Network {
                     Self::connect_to_wifi(&ssid, None);
                 }
             });
-            
+
             hbox.append(&connect_button);
         } else {
             let disconnect_button = Button::with_label("Disconnect");
             disconnect_button.add_css_class("network-disconnect-button");
-            
+
             let ssid = network.ssid.clone();
             disconnect_button.connect_clicked(move |_| {
                 Self::disconnect_wifi(&ssid);
             });
-            
+
             hbox.append(&disconnect_button);
         }
-        
+
         row.set_child(Some(&hbox));
         row
     }
-    
+
     fn show_password_dialog(ssid: &str, button: &Button) {
         // Create a simple password dialog
         let dialog = gtk4::Window::new();
@@ -706,43 +768,43 @@ impl Network {
         dialog.set_modal(true);
         dialog.set_resizable(false);
         dialog.set_default_size(300, 150);
-        
+
         // Find the parent window
         if let Some(native) = button.native() {
             if let Some(window) = native.downcast_ref::<gtk4::Window>() {
                 dialog.set_transient_for(Some(window));
             }
         }
-        
+
         let vbox = Box::new(Orientation::Vertical, 10);
         vbox.set_margin_top(20);
         vbox.set_margin_bottom(20);
         vbox.set_margin_start(20);
         vbox.set_margin_end(20);
-        
+
         let label = Label::new(Some("Enter WiFi password:"));
         label.set_halign(gtk4::Align::Start);
         vbox.append(&label);
-        
+
         let password_entry = Entry::new();
         password_entry.set_visibility(false);
         password_entry.set_placeholder_text(Some("Password"));
         vbox.append(&password_entry);
-        
+
         let button_box = Box::new(Orientation::Horizontal, 10);
         button_box.set_halign(gtk4::Align::End);
         button_box.set_margin_top(10);
-        
+
         let cancel_button = Button::with_label("Cancel");
         let connect_button = Button::with_label("Connect");
         connect_button.add_css_class("suggested-action");
-        
+
         button_box.append(&cancel_button);
         button_box.append(&connect_button);
         vbox.append(&button_box);
-        
+
         dialog.set_child(Some(&vbox));
-        
+
         // Handle button clicks
         let dialog_weak = dialog.downgrade();
         cancel_button.connect_clicked(move |_| {
@@ -750,7 +812,7 @@ impl Network {
                 dialog.close();
             }
         });
-        
+
         let dialog_weak2 = dialog.downgrade();
         let ssid = ssid.to_string();
         let password_entry_weak = password_entry.downgrade();
@@ -766,7 +828,7 @@ impl Network {
                 }
             }
         });
-        
+
         // Handle Enter key
         let dialog_weak3 = dialog.downgrade();
         let ssid_for_enter = ssid.clone();
@@ -779,7 +841,7 @@ impl Network {
                 }
             }
         });
-        
+
         // Handle Escape key
         let controller = gtk4::EventControllerKey::new();
         let dialog_weak4 = dialog.downgrade();
@@ -794,47 +856,51 @@ impl Network {
             }
         });
         dialog.add_controller(controller);
-        
+
         dialog.present();
         password_entry.grab_focus();
     }
-    
+
     fn get_wifi_networks() -> Vec<WifiNetwork> {
         let mut networks = Vec::new();
-        
+
         // Get current SSID to mark as connected
-        let current_ssid = if let Ok(output) = Command::new("iwgetid")
-            .arg("-r")
-            .output()
-        {
+        let current_ssid = if let Ok(output) = Command::new("iwgetid").arg("-r").output() {
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         } else {
             String::new()
         };
-        
+
         // Use nmcli to get WiFi networks
         if let Ok(output) = Command::new("nmcli")
-            .args(&["-t", "-f", "SSID,SIGNAL,SECURITY,BSSID", "device", "wifi", "list"])
+            .args(&[
+                "-t",
+                "-f",
+                "SSID,SIGNAL,SECURITY,BSSID",
+                "device",
+                "wifi",
+                "list",
+            ])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let mut seen_ssids = std::collections::HashSet::new();
-            
+
             for line in output_str.lines() {
                 let parts: Vec<&str> = line.split(':').collect();
                 if parts.len() >= 4 {
                     let ssid = parts[0].to_string();
-                    
+
                     // Skip empty SSIDs and duplicates
                     if ssid.is_empty() || !seen_ssids.insert(ssid.clone()) {
                         continue;
                     }
-                    
+
                     if let Ok(signal) = parts[1].parse::<u8>() {
                         let secured = !parts[2].is_empty() && parts[2] != "--";
                         let connected = ssid == current_ssid;
                         let bssid = parts[3].to_string();
-                        
+
                         networks.push(WifiNetwork {
                             ssid,
                             signal,
@@ -845,20 +911,18 @@ impl Network {
                     }
                 }
             }
-            
+
             // Sort by signal strength (connected first, then by signal)
-            networks.sort_by(|a, b| {
-                match (a.connected, b.connected) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => b.signal.cmp(&a.signal),
-                }
+            networks.sort_by(|a, b| match (a.connected, b.connected) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => b.signal.cmp(&a.signal),
             });
         }
-        
+
         networks
     }
-    
+
     fn get_wifi_signal_icon(signal: u8) -> &'static str {
         match signal {
             0..=25 => "network-wireless-signal-weak-symbolic",
@@ -867,19 +931,22 @@ impl Network {
             _ => "network-wireless-signal-excellent-symbolic",
         }
     }
-    
+
     fn connect_to_wifi(ssid: &str, password: Option<&str>) {
         let mut cmd = Command::new("nmcli");
         cmd.args(&["device", "wifi", "connect", ssid]);
-        
+
         if let Some(pwd) = password {
             cmd.args(&["password", pwd]);
         }
-        
+
         match cmd.output() {
             Ok(output) => {
                 if !output.status.success() {
-                    warn!("Failed to connect to WiFi: {}", String::from_utf8_lossy(&output.stderr));
+                    warn!(
+                        "Failed to connect to WiFi: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                 }
             }
             Err(e) => {
@@ -887,7 +954,7 @@ impl Network {
             }
         }
     }
-    
+
     fn disconnect_wifi(ssid: &str) {
         match Command::new("nmcli")
             .args(&["connection", "down", ssid])
@@ -895,7 +962,10 @@ impl Network {
         {
             Ok(output) => {
                 if !output.status.success() {
-                    warn!("Failed to disconnect WiFi: {}", String::from_utf8_lossy(&output.stderr));
+                    warn!(
+                        "Failed to disconnect WiFi: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                 }
             }
             Err(e) => {
@@ -903,7 +973,7 @@ impl Network {
             }
         }
     }
-    
+
     fn get_network_info() -> NetworkInfo {
         let mut info = NetworkInfo {
             interface: "none".to_string(),
@@ -918,10 +988,17 @@ impl Network {
             vpn_active: false,
             vpn_name: None,
         };
-        
+
         // Check for active VPN
         if let Ok(output) = Command::new("nmcli")
-            .args(&["-t", "-f", "TYPE,NAME,STATE", "connection", "show", "--active"])
+            .args(&[
+                "-t",
+                "-f",
+                "TYPE,NAME,STATE",
+                "connection",
+                "show",
+                "--active",
+            ])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -936,49 +1013,57 @@ impl Network {
                 }
             }
         }
-        
+
         // Get primary network connection
         if let Ok(output) = Command::new("ip")
             .args(&["route", "show", "default"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
-            
+
             if let Some(line) = output_str.lines().next() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if let Some(dev_idx) = parts.iter().position(|&x| x == "dev") {
                     if let Some(interface) = parts.get(dev_idx + 1) {
                         let interface_info = Self::get_interface_info(interface);
                         info = interface_info;
-                        
+
                         // Restore VPN info
                         if let Ok(output) = Command::new("nmcli")
-                            .args(&["-t", "-f", "TYPE,NAME,STATE", "connection", "show", "--active"])
+                            .args(&[
+                                "-t",
+                                "-f",
+                                "TYPE,NAME,STATE",
+                                "connection",
+                                "show",
+                                "--active",
+                            ])
                             .output()
                         {
                             let output_str = String::from_utf8_lossy(&output.stdout);
                             for line in output_str.lines() {
                                 let parts: Vec<&str> = line.split(':').collect();
-                                if parts.len() >= 3 && parts[0] == "vpn" && parts[2] == "activated" {
+                                if parts.len() >= 3 && parts[0] == "vpn" && parts[2] == "activated"
+                                {
                                     info.vpn_active = true;
                                     info.vpn_name = Some(parts[1].to_string());
                                     break;
                                 }
                             }
                         }
-                        
+
                         return info;
                     }
                 }
             }
         }
-        
+
         info
     }
-    
+
     fn get_vpn_connections() -> Vec<VpnConnection> {
         let mut vpns = Vec::new();
-        
+
         // Get all VPN connections
         if let Ok(output) = Command::new("nmcli")
             .args(&["-t", "-f", "NAME,UUID,TYPE,STATE", "connection", "show"])
@@ -996,21 +1081,21 @@ impl Network {
                 }
             }
         }
-        
+
         vpns
     }
-    
+
     fn toggle_vpn(uuid: &str, connect: bool) {
         let action = if connect { "up" } else { "down" };
         let _ = Command::new("nmcli")
             .args(&["connection", action, uuid])
             .spawn();
     }
-    
+
     fn fetch_public_ip_addresses() -> (Option<String>, Option<String>) {
         let mut ipv4 = None;
         let mut ipv6 = None;
-        
+
         // Try to fetch public IPv4 address
         if let Ok(output) = Command::new("curl")
             .args(&["--silent", "--max-time", "1", "https://api.ipify.org"])
@@ -1021,7 +1106,7 @@ impl Network {
                 ipv4 = Some(ip_str);
             }
         }
-        
+
         // Try to fetch public IPv6 address
         if let Ok(output) = Command::new("curl")
             .args(&["--silent", "--max-time", "1", "https://api6.ipify.org"])
@@ -1032,10 +1117,10 @@ impl Network {
                 ipv6 = Some(ip_str);
             }
         }
-        
+
         (ipv4, ipv6)
     }
-    
+
     fn get_interface_info(interface: &str) -> NetworkInfo {
         let mut info = NetworkInfo {
             interface: interface.to_string(),
@@ -1050,27 +1135,25 @@ impl Network {
             vpn_active: false,
             vpn_name: None,
         };
-        
+
         // Determine connection type
         if interface.starts_with("wl") || interface.starts_with("wlan") {
             info.connection_type = ConnectionType::Wifi;
-            
+
             // Get WiFi info using iw or nmcli
             if let Ok(output) = Command::new("iw")
                 .args(&["dev", interface, "link"])
                 .output()
             {
                 let output_str = String::from_utf8_lossy(&output.stdout);
-                
+
                 // Parse SSID
                 for line in output_str.lines() {
                     if line.trim().starts_with("SSID:") {
-                        info.ssid = line.split(':')
-                            .nth(1)
-                            .map(|s| s.trim().to_string());
+                        info.ssid = line.split(':').nth(1).map(|s| s.trim().to_string());
                     }
                 }
-                
+
                 // Get signal strength
                 if let Ok(signal_output) = Command::new("iw")
                     .args(&["dev", interface, "station", "dump"])
@@ -1079,7 +1162,8 @@ impl Network {
                     let signal_str = String::from_utf8_lossy(&signal_output.stdout);
                     for line in signal_str.lines() {
                         if line.contains("signal:") {
-                            if let Some(signal_dbm) = line.split("signal:")
+                            if let Some(signal_dbm) = line
+                                .split("signal:")
                                 .nth(1)
                                 .and_then(|s| s.split_whitespace().next())
                                 .and_then(|s| s.parse::<i32>().ok())
@@ -1100,8 +1184,7 @@ impl Network {
                     let parts: Vec<&str> = line.split(':').collect();
                     if parts.get(0) == Some(&"yes") {
                         info.ssid = parts.get(1).map(|s| s.to_string());
-                        info.signal_strength = parts.get(2)
-                            .and_then(|s| s.parse::<u8>().ok());
+                        info.signal_strength = parts.get(2).and_then(|s| s.parse::<u8>().ok());
                         break;
                     }
                 }
@@ -1109,7 +1192,7 @@ impl Network {
         } else if interface.starts_with("en") || interface.starts_with("eth") {
             info.connection_type = ConnectionType::Ethernet;
         }
-        
+
         // Get local IP addresses
         if let Ok(output) = Command::new("ip")
             .args(&["addr", "show", interface])
@@ -1132,18 +1215,20 @@ impl Network {
                     if let Some(ip) = parts.get(1) {
                         let ip_clean = ip.split('/').next().unwrap_or(ip).to_string();
                         // Filter out link-local addresses (fe80::) and temporary addresses
-                        if !ip_clean.starts_with("fe80:") && !parts.iter().any(|p| *p == "temporary") {
+                        if !ip_clean.starts_with("fe80:")
+                            && !parts.iter().any(|p| *p == "temporary")
+                        {
                             info.ipv6_address = Some(ip_clean);
                         }
                     }
                 }
             }
         }
-        
+
         // Public IPs will be fetched asynchronously in update_network
         info
     }
-    
+
     fn dbm_to_percentage(dbm: i32) -> u8 {
         // Convert dBm to percentage (rough approximation)
         let percentage = if dbm >= -50 {
@@ -1161,7 +1246,7 @@ impl Network {
         };
         percentage as u8
     }
-    
+
     fn get_network_icon_name(info: &NetworkInfo) -> String {
         match info.connection_type {
             ConnectionType::Wifi => {
@@ -1178,9 +1263,10 @@ impl Network {
             }
             ConnectionType::Ethernet => "network-wired-symbolic",
             ConnectionType::Disconnected => "network-offline-symbolic",
-        }.to_string()
+        }
+        .to_string()
     }
-    
+
     fn open_network_settings() {
         // Try different network settings commands
         let commands = vec![
@@ -1188,41 +1274,42 @@ impl Network {
             ("nm-connection-editor", vec![]),
             ("nmtui", vec![]),
         ];
-        
+
         for (cmd, args) in commands {
             if Command::new(cmd).args(&args).spawn().is_ok() {
                 return;
             }
         }
-        
+
         warn!("Could not find network settings application");
     }
-    
+
     fn toggle_wifi() {
         // Toggle WiFi using nmcli
-        if let Ok(output) = Command::new("nmcli")
-            .args(&["radio", "wifi"])
-            .output()
-        {
+        if let Ok(output) = Command::new("nmcli").args(&["radio", "wifi"]).output() {
             let status = String::from_utf8_lossy(&output.stdout);
-            let new_state = if status.trim() == "enabled" { "off" } else { "on" };
-            
+            let new_state = if status.trim() == "enabled" {
+                "off"
+            } else {
+                "on"
+            };
+
             let _ = Command::new("nmcli")
                 .args(&["radio", "wifi", new_state])
                 .spawn();
         }
     }
-    
+
     fn create_address_row(label_text: &str, address: &str) -> Box {
         let container = Box::new(Orientation::Horizontal, 5);
         container.add_css_class("network-address-box");
-        
+
         // Create label with address
         let label = Label::new(Some(label_text));
         label.set_halign(gtk4::Align::Start);
         label.set_width_chars(10);
         container.append(&label);
-        
+
         // Create value label
         let value_label = Label::new(Some(address));
         value_label.set_halign(gtk4::Align::Start);
@@ -1230,15 +1317,15 @@ impl Network {
         value_label.set_hexpand(true);
         value_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         container.append(&value_label);
-        
+
         // Create copy button
         let copy_button = Button::from_icon_name("edit-copy-symbolic");
         copy_button.set_tooltip_text(Some(&format!("Copy {}", address)));
         copy_button.add_css_class("network-copy-button");
-        
+
         // Clone address for closure
         let address_copy = address.to_string();
-        
+
         // Connect button click
         copy_button.connect_clicked(move |_| {
             // Copy to clipboard
@@ -1248,11 +1335,11 @@ impl Network {
                 info!("Copied to clipboard: {}", address_copy);
             }
         });
-        
+
         container.append(&copy_button);
         container
     }
-    
+
     pub fn widget(&self) -> &Button {
         &self.button
     }

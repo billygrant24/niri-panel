@@ -1,13 +1,13 @@
-use gtk4::prelude::*;
-use gtk4::{Button, Image, Popover, Box, Orientation, Label, ApplicationWindow};
-use gtk4_layer_shell::{LayerShell};
-use gtk4::glib::WeakRef;
 use anyhow::Result;
-use std::process::Command;
-use std::fs;
-use std::time::Duration;
-use std::rc::Rc;
+use gtk4::glib::WeakRef;
+use gtk4::prelude::*;
+use gtk4::{ApplicationWindow, Box, Button, Image, Label, Orientation, Popover};
+use gtk4_layer_shell::LayerShell;
 use std::cell::RefCell;
+use std::fs;
+use std::process::Command;
+use std::rc::Rc;
+use std::time::Duration;
 use tracing::info;
 
 pub struct Power {
@@ -31,7 +31,7 @@ struct SystemStats {
     cpu_model: String,
     uptime: String,
     memory_usage: (u64, u64), // (used, total) in MB
-    disk_usage: (u64, u64),    // (used, total) in GB
+    disk_usage: (u64, u64),   // (used, total) in GB
     packages: String,
 }
 
@@ -45,7 +45,7 @@ impl PowerAction {
             PowerAction::Shutdown => "Shut Down",
         }
     }
-    
+
     fn icon(&self) -> &str {
         match self {
             PowerAction::Lock => "system-lock-screen-symbolic",
@@ -55,7 +55,7 @@ impl PowerAction {
             PowerAction::Shutdown => "system-shutdown-symbolic",
         }
     }
-    
+
     fn execute(&self) {
         match self {
             PowerAction::Lock => {
@@ -71,9 +71,7 @@ impl PowerAction {
             }
             PowerAction::Logout => {
                 let user = std::env::var("USER").unwrap_or_default();
-                let _ = Command::new("loginctl")
-                    .args(&["kill-user", &user])
-                    .spawn();
+                let _ = Command::new("loginctl").args(&["kill-user", &user]).spawn();
             }
             PowerAction::Sleep => {
                 // Lock first
@@ -85,7 +83,7 @@ impl PowerAction {
                     // Wait a moment for lock to engage
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 }
-                
+
                 // Then hibernate
                 let _ = Command::new("systemctl").arg("hibernate").spawn();
             }
@@ -97,7 +95,7 @@ impl PowerAction {
             }
         }
     }
-    
+
     fn needs_confirmation(&self) -> bool {
         match self {
             PowerAction::Lock => false,
@@ -109,19 +107,19 @@ impl PowerAction {
 impl Power {
     pub fn new(
         window_weak: WeakRef<ApplicationWindow>,
-        active_popovers: Rc<RefCell<i32>>
+        active_popovers: Rc<RefCell<i32>>,
     ) -> Result<Self> {
         let button = Button::new();
         button.add_css_class("power");
-        
+
         // Try multiple power icon fallbacks
         let icon_names = vec![
             "system-shutdown-symbolic",
             "application-exit-symbolic",
             "system-power-symbolic",
-            "gtk-quit"
+            "gtk-quit",
         ];
-        
+
         let image = Image::new();
         for icon_name in icon_names {
             if gtk4::IconTheme::default().has_icon(icon_name) {
@@ -129,7 +127,7 @@ impl Power {
                 break;
             }
         }
-        
+
         if image.icon_name().is_none() {
             let label = Label::new(Some("⏻"));
             label.add_css_class("icon-fallback");
@@ -138,13 +136,13 @@ impl Power {
             image.set_icon_size(gtk4::IconSize::Large);
             button.set_child(Some(&image));
         }
-        
+
         // Create popover for power menu
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("power-popover");
         popover.set_autohide(true);
-        
+
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();
         let active_popovers_show = active_popovers.clone();
@@ -152,11 +150,13 @@ impl Power {
             *active_popovers_show.borrow_mut() += 1;
             if let Some(window) = window_weak_show.upgrade() {
                 window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
-                info!("Power popover shown - keyboard mode set to OnDemand (active popovers: {})", 
-                      *active_popovers_show.borrow());
+                info!(
+                    "Power popover shown - keyboard mode set to OnDemand (active popovers: {})",
+                    *active_popovers_show.borrow()
+                );
             }
         });
-        
+
         // Handle popover hide event - disable keyboard mode if no other popovers
         let window_weak_hide = window_weak.clone();
         let active_popovers_hide = active_popovers.clone();
@@ -169,17 +169,20 @@ impl Power {
                     info!("Power popover hidden - keyboard mode set to None");
                 }
             } else {
-                info!("Power popover hidden - keeping keyboard mode (active popovers: {})", count);
+                info!(
+                    "Power popover hidden - keeping keyboard mode (active popovers: {})",
+                    count
+                );
             }
         });
-        
+
         let popover_box = Box::new(Orientation::Vertical, 8);
         popover_box.set_margin_start(12);
         popover_box.set_margin_end(12);
         popover_box.set_margin_top(12);
         popover_box.set_margin_bottom(12);
         popover_box.set_size_request(350, -1);
-        
+
         // User info section
         let user_box = Box::new(Orientation::Horizontal, 10);
         user_box.add_css_class("power-user-box");
@@ -187,19 +190,21 @@ impl Power {
         user_box.set_margin_end(8);
         user_box.set_margin_top(8);
         user_box.set_margin_bottom(8);
-        
+
         let user_icon = Image::from_icon_name("avatar-default-symbolic");
         user_icon.set_pixel_size(36);
         user_box.append(&user_icon);
-        
-        let user_label = Label::new(Some(&std::env::var("USER").unwrap_or_else(|_| "User".to_string())));
+
+        let user_label = Label::new(Some(
+            &std::env::var("USER").unwrap_or_else(|_| "User".to_string()),
+        ));
         user_label.add_css_class("power-user-label");
         user_label.set_halign(gtk4::Align::Start);
         user_label.set_hexpand(true);
         user_box.append(&user_label);
-        
+
         popover_box.append(&user_box);
-        
+
         // System Stats Section
         let stats_box = Box::new(Orientation::Vertical, 8);
         stats_box.add_css_class("power-stats-box");
@@ -207,23 +212,23 @@ impl Power {
         stats_box.set_margin_end(8);
         stats_box.set_margin_top(8);
         stats_box.set_margin_bottom(8);
-        
+
         // Stats title
         let stats_title = Label::new(Some("System Information"));
         stats_title.add_css_class("power-stats-title");
         stats_title.set_halign(gtk4::Align::Start);
         stats_box.append(&stats_title);
-        
+
         // Create a scrolled window for the stats
         let stats_scroll = gtk4::ScrolledWindow::new();
         stats_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         stats_scroll.set_min_content_height(200);
         stats_scroll.set_propagate_natural_height(true);
-        
+
         // Inner container for the stats
         let stats_inner = Box::new(Orientation::Vertical, 6);
         stats_inner.set_margin_top(4);
-        
+
         // Create stat labels
         let os_label = Self::create_stat_label("OS", "Loading...");
         let kernel_label = Self::create_stat_label("Kernel", "Loading...");
@@ -233,7 +238,7 @@ impl Power {
         let memory_label = Self::create_stat_label("Memory", "0 MB / 0 MB");
         let disk_label = Self::create_stat_label("Disk (/)", "0 GB / 0 GB");
         let packages_label = Self::create_stat_label("Packages", "Loading...");
-        
+
         stats_inner.append(&os_label);
         stats_inner.append(&kernel_label);
         stats_inner.append(&hostname_label);
@@ -242,16 +247,23 @@ impl Power {
         stats_inner.append(&memory_label);
         stats_inner.append(&disk_label);
         stats_inner.append(&packages_label);
-        
+
         stats_scroll.set_child(Some(&stats_inner));
         stats_box.append(&stats_scroll);
         popover_box.append(&stats_box);
-        
+
         // Update stats immediately and schedule updates
-        Self::update_stats(&os_label, &kernel_label, &hostname_label, &cpu_model_label,
-                          &uptime_label, &memory_label, &disk_label,
-                          &packages_label);
-        
+        Self::update_stats(
+            &os_label,
+            &kernel_label,
+            &hostname_label,
+            &cpu_model_label,
+            &uptime_label,
+            &memory_label,
+            &disk_label,
+            &packages_label,
+        );
+
         let os_weak = os_label.downgrade();
         let kernel_weak = kernel_label.downgrade();
         let hostname_weak = hostname_label.downgrade();
@@ -261,21 +273,33 @@ impl Power {
         let disk_weak = disk_label.downgrade();
         let packages_weak = packages_label.downgrade();
         let popover_weak = popover.downgrade();
-        
+
         glib::timeout_add_local(Duration::from_secs(2), move || {
             if let Some(popover) = popover_weak.upgrade() {
                 // Only update if popover is visible
                 if popover.is_visible() {
-                    if let (Some(os), Some(kernel), Some(hostname), Some(cpu_model),
-                            Some(uptime), Some(memory), Some(disk),
-                            Some(packages)) = 
-                        (os_weak.upgrade(), kernel_weak.upgrade(), hostname_weak.upgrade(),
-                         cpu_model_weak.upgrade(), uptime_weak.upgrade(),
-                         memory_weak.upgrade(), disk_weak.upgrade(),
-                         packages_weak.upgrade()) {
-                        Self::update_stats(&os, &kernel, &hostname, &cpu_model,
-                                         &uptime, &memory, &disk,
-                                         &packages);
+                    if let (
+                        Some(os),
+                        Some(kernel),
+                        Some(hostname),
+                        Some(cpu_model),
+                        Some(uptime),
+                        Some(memory),
+                        Some(disk),
+                        Some(packages),
+                    ) = (
+                        os_weak.upgrade(),
+                        kernel_weak.upgrade(),
+                        hostname_weak.upgrade(),
+                        cpu_model_weak.upgrade(),
+                        uptime_weak.upgrade(),
+                        memory_weak.upgrade(),
+                        disk_weak.upgrade(),
+                        packages_weak.upgrade(),
+                    ) {
+                        Self::update_stats(
+                            &os, &kernel, &hostname, &cpu_model, &uptime, &memory, &disk, &packages,
+                        );
                     }
                 }
                 glib::ControlFlow::Continue
@@ -283,7 +307,7 @@ impl Power {
                 glib::ControlFlow::Break
             }
         });
-        
+
         // Power actions - horizontal layout
         let actions_box = Box::new(Orientation::Horizontal, 0);
         actions_box.set_margin_start(8);
@@ -292,7 +316,7 @@ impl Power {
         actions_box.set_margin_bottom(8);
         actions_box.set_homogeneous(true);
         actions_box.add_css_class("power-actions-box");
-        
+
         let actions = vec![
             PowerAction::Lock,
             PowerAction::Logout,
@@ -300,15 +324,15 @@ impl Power {
             PowerAction::Reboot,
             PowerAction::Shutdown,
         ];
-        
+
         for action in actions {
             let button = Self::create_action_button(action, popover.downgrade());
             actions_box.append(&button);
         }
-        
+
         popover_box.append(&actions_box);
         popover.set_child(Some(&popover_box));
-        
+
         // Add Escape key handler to close popover
         let escape_controller = gtk4::EventControllerKey::new();
         let popover_weak_escape = popover.downgrade();
@@ -323,91 +347,104 @@ impl Power {
             }
         });
         popover.add_controller(escape_controller);
-        
+
         // Show popover on click
         button.connect_clicked(move |_| {
             popover.popup();
         });
-        
+
         Ok(Self { button })
     }
-    
+
     fn create_stat_label(title: &str, initial_value: &str) -> Box {
         let hbox = Box::new(Orientation::Horizontal, 12);
         hbox.set_margin_start(4);
         hbox.set_margin_end(4);
-        
+
         let title_label = Label::new(Some(title));
         title_label.add_css_class("power-stat-title");
         title_label.set_halign(gtk4::Align::Start);
         title_label.set_hexpand(true);
-        
+
         let value_label = Label::new(Some(initial_value));
         value_label.add_css_class("power-stat-value");
         value_label.set_halign(gtk4::Align::End);
         value_label.set_margin_end(6);
-        
+
         hbox.append(&title_label);
         hbox.append(&value_label);
-        
+
         hbox
     }
-    
-    fn update_stats(os_box: &Box, kernel_box: &Box, hostname_box: &Box, cpu_model_box: &Box,
-                    uptime_box: &Box, memory_box: &Box, disk_box: &Box,
-                    packages_box: &Box) {
+
+    fn update_stats(
+        os_box: &Box,
+        kernel_box: &Box,
+        hostname_box: &Box,
+        cpu_model_box: &Box,
+        uptime_box: &Box,
+        memory_box: &Box,
+        disk_box: &Box,
+        packages_box: &Box,
+    ) {
         let stats = Self::get_system_stats();
-        
+
         // Update OS
         if let Some(value_label) = os_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
                 label.set_text(&stats.os);
             }
         }
-        
+
         // Update Kernel
         if let Some(value_label) = kernel_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
                 label.set_text(&stats.kernel);
             }
         }
-        
+
         // Update Hostname
         if let Some(value_label) = hostname_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
                 label.set_text(&stats.hostname);
             }
         }
-        
+
         // Update CPU Model
         if let Some(value_label) = cpu_model_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
                 label.set_text(&stats.cpu_model);
             }
         }
-        
+
         // Update uptime
         if let Some(value_label) = uptime_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
                 label.set_text(&stats.uptime);
             }
         }
-        
+
         // Update Memory
         if let Some(value_label) = memory_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
-                let (used_gb, total_gb) = (stats.memory_usage.0 as f32 / 1024.0, stats.memory_usage.1 as f32 / 1024.0);
+                let (used_gb, total_gb) = (
+                    stats.memory_usage.0 as f32 / 1024.0,
+                    stats.memory_usage.1 as f32 / 1024.0,
+                );
                 label.set_text(&format!("{:.1} GB / {:.1} GB", used_gb, total_gb));
             }
         }
-        
+
         // Update Disk
         if let Some(value_label) = disk_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
-                label.set_text(&format!("{} GB / {} GB", stats.disk_usage.0, stats.disk_usage.1));
+                label.set_text(&format!(
+                    "{} GB / {} GB",
+                    stats.disk_usage.0, stats.disk_usage.1
+                ));
             }
         }
-        
+
         // Update Packages
         if let Some(value_label) = packages_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
@@ -415,7 +452,7 @@ impl Power {
             }
         }
     }
-    
+
     fn get_system_stats() -> SystemStats {
         let mut stats = SystemStats {
             os: "Unknown".to_string(),
@@ -427,31 +464,32 @@ impl Power {
             disk_usage: (0, 0),
             packages: "Unknown".to_string(),
         };
-        
+
         // Get OS information
         if let Ok(os_release) = fs::read_to_string("/etc/os-release") {
             for line in os_release.lines() {
                 if line.starts_with("PRETTY_NAME=") {
-                    stats.os = line.trim_start_matches("PRETTY_NAME=")
+                    stats.os = line
+                        .trim_start_matches("PRETTY_NAME=")
                         .trim_matches('"')
                         .to_string();
                     break;
                 }
             }
         }
-        
+
         // Get kernel version
         if let Ok(kernel) = fs::read_to_string("/proc/version") {
             if let Some(kernel_version) = kernel.split_whitespace().nth(2) {
                 stats.kernel = kernel_version.to_string();
             }
         }
-        
+
         // Get hostname
         if let Ok(hostname) = fs::read_to_string("/etc/hostname") {
             stats.hostname = hostname.trim().to_string();
         }
-        
+
         // Get CPU model
         if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
             for line in cpuinfo.lines() {
@@ -463,7 +501,7 @@ impl Power {
                 }
             }
         }
-        
+
         // Get uptime
         if let Ok(uptime_content) = fs::read_to_string("/proc/uptime") {
             if let Some(uptime_str) = uptime_content.split_whitespace().next() {
@@ -471,7 +509,7 @@ impl Power {
                     let days = (uptime_secs / 86400.0) as u64;
                     let hours = ((uptime_secs % 86400.0) / 3600.0) as u64;
                     let minutes = ((uptime_secs % 3600.0) / 60.0) as u64;
-                    
+
                     if days > 0 {
                         stats.uptime = format!("{}d {}h {}m", days, hours, minutes);
                     } else if hours > 0 {
@@ -482,12 +520,12 @@ impl Power {
                 }
             }
         }
-        
+
         // Get memory usage from /proc/meminfo
         if let Ok(meminfo) = fs::read_to_string("/proc/meminfo") {
             let mut mem_total = 0u64;
             let mut mem_available = 0u64;
-            
+
             for line in meminfo.lines() {
                 if line.starts_with("MemTotal:") {
                     if let Some(value) = line.split_whitespace().nth(1) {
@@ -499,16 +537,13 @@ impl Power {
                     }
                 }
             }
-            
+
             let mem_used = mem_total.saturating_sub(mem_available);
             stats.memory_usage = (mem_used, mem_total);
         }
-        
+
         // Get disk usage for root filesystem
-        if let Ok(output) = Command::new("df")
-            .args(&["-BG", "/"])
-            .output()
-        {
+        if let Ok(output) = Command::new("df").args(&["-BG", "/"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             if let Some(line) = output_str.lines().nth(1) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -520,16 +555,13 @@ impl Power {
                 }
             }
         }
-        
+
         // Count packages - try multiple package managers
         let mut package_count = 0;
         let mut package_managers = Vec::new();
-        
+
         // Check for Nix packages
-        if let Ok(output) = Command::new("nix-env")
-            .args(&["-q"])
-            .output()
-        {
+        if let Ok(output) = Command::new("nix-env").args(&["-q"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let count = output_str.lines().count();
             if count > 0 {
@@ -537,7 +569,7 @@ impl Power {
                 package_managers.push("nix");
             }
         }
-        
+
         // Check for system packages on NixOS
         if let Ok(output) = Command::new("nix-store")
             .args(&["-q", "--requisites", "/run/current-system"])
@@ -550,32 +582,26 @@ impl Power {
                 package_managers.push("nixos");
             }
         }
-        
+
         // Check for other package managers
-        if let Ok(output) = Command::new("dpkg")
-            .args(&["-l"])
-            .output()
-        {
+        if let Ok(output) = Command::new("dpkg").args(&["-l"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
-            let count = output_str.lines().filter(|line| line.starts_with("ii")).count();
+            let count = output_str
+                .lines()
+                .filter(|line| line.starts_with("ii"))
+                .count();
             if count > 0 {
                 package_count += count;
                 package_managers.push("dpkg");
             }
-        } else if let Ok(output) = Command::new("rpm")
-            .args(&["-qa"])
-            .output()
-        {
+        } else if let Ok(output) = Command::new("rpm").args(&["-qa"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let count = output_str.lines().count();
             if count > 0 {
                 package_count += count;
                 package_managers.push("rpm");
             }
-        } else if let Ok(output) = Command::new("pacman")
-            .args(&["-Q"])
-            .output()
-        {
+        } else if let Ok(output) = Command::new("pacman").args(&["-Q"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let count = output_str.lines().count();
             if count > 0 {
@@ -583,41 +609,44 @@ impl Power {
                 package_managers.push("pacman");
             }
         }
-        
+
         if package_count > 0 {
             stats.packages = format!("{} ({})", package_count, package_managers.join(", "));
         }
-        
+
         stats
     }
-    
-    fn create_action_button(action: PowerAction, popover_weak: gtk4::glib::WeakRef<Popover>) -> Button {
+
+    fn create_action_button(
+        action: PowerAction,
+        popover_weak: gtk4::glib::WeakRef<Popover>,
+    ) -> Button {
         let button = Button::new();
         button.add_css_class("power-action-button");
-        
+
         let vbox = Box::new(Orientation::Vertical, 6);
         vbox.set_margin_start(4);
         vbox.set_margin_end(4);
         vbox.set_margin_top(4);
         vbox.set_margin_bottom(4);
-        
+
         let icon = Image::from_icon_name(action.icon());
         icon.set_pixel_size(22);
         vbox.append(&icon);
-        
+
         let label = Label::new(Some(action.label()));
         label.add_css_class("power-action-label");
         vbox.append(&label);
-        
+
         button.set_child(Some(&vbox));
-        
+
         match action {
             PowerAction::Shutdown | PowerAction::Reboot => {
                 button.add_css_class("destructive-action");
-            },
+            }
             _ => {}
         }
-        
+
         button.connect_clicked(move |_| {
             if action.needs_confirmation() {
                 Self::show_confirmation_dialog(action.clone(), popover_weak.clone());
@@ -628,16 +657,16 @@ impl Power {
                 }
             }
         });
-        
+
         button
     }
-    
+
     fn show_confirmation_dialog(action: PowerAction, popover_weak: gtk4::glib::WeakRef<Popover>) {
         // Close the main popover first
         if let Some(main_popover) = popover_weak.upgrade() {
             main_popover.popdown();
         }
-        
+
         // Create a new window for confirmation
         let dialog = gtk4::Window::new();
         dialog.set_title(Some("Confirm Action"));
@@ -645,23 +674,23 @@ impl Power {
         dialog.set_resizable(false);
         dialog.set_decorated(false);
         dialog.add_css_class("power-confirm-dialog");
-        
+
         // Center the window on screen
         dialog.set_default_size(320, 170);
-        
+
         let confirm_box = Box::new(Orientation::Vertical, 24);
         confirm_box.set_margin_start(24);
         confirm_box.set_margin_end(24);
         confirm_box.set_margin_top(24);
         confirm_box.set_margin_bottom(24);
-        
+
         // Header with icon and message
         let header_box = Box::new(Orientation::Horizontal, 16);
         header_box.set_margin_bottom(16);
-        
+
         let icon = Image::from_icon_name(action.icon());
         icon.set_pixel_size(48);
-        
+
         // For destructive actions, use a warning color
         match &action {
             PowerAction::Shutdown | PowerAction::Reboot => {
@@ -669,43 +698,46 @@ impl Power {
             }
             _ => {}
         }
-        
+
         header_box.append(&icon);
-        
+
         // Confirmation message
-        let message = Label::new(Some(&format!("Are you sure you want to {}?", action.label().to_lowercase())));
+        let message = Label::new(Some(&format!(
+            "Are you sure you want to {}?",
+            action.label().to_lowercase()
+        )));
         message.add_css_class("power-confirm-message");
         message.set_wrap(true);
         message.set_halign(gtk4::Align::Start);
         message.set_hexpand(true);
         header_box.append(&message);
-        
+
         confirm_box.append(&header_box);
-        
+
         // Buttons
         let button_box = Box::new(Orientation::Horizontal, 12);
         button_box.set_halign(gtk4::Align::End);
         button_box.set_margin_top(16);
-        
+
         let cancel_button = Button::with_label("Cancel");
         cancel_button.add_css_class("power-confirm-cancel");
-        
+
         let confirm_button = Button::with_label("Confirm");
         confirm_button.add_css_class("power-confirm-button");
-        
+
         match &action {
             PowerAction::Shutdown | PowerAction::Reboot => {
                 confirm_button.add_css_class("destructive-action");
             }
             _ => {}
         }
-        
+
         button_box.append(&cancel_button);
         button_box.append(&confirm_button);
         confirm_box.append(&button_box);
-        
+
         dialog.set_child(Some(&confirm_box));
-        
+
         // Handle button clicks
         let dialog_weak = dialog.downgrade();
         cancel_button.connect_clicked(move |_| {
@@ -713,7 +745,7 @@ impl Power {
                 dialog.close();
             }
         });
-        
+
         let dialog_weak2 = dialog.downgrade();
         confirm_button.connect_clicked(move |_| {
             action.execute();
@@ -721,7 +753,7 @@ impl Power {
                 dialog.close();
             }
         });
-        
+
         // Handle Escape key
         let controller = gtk4::EventControllerKey::new();
         let dialog_weak3 = dialog.downgrade();
@@ -736,14 +768,14 @@ impl Power {
             }
         });
         dialog.add_controller(controller);
-        
+
         // Show the dialog centered
         dialog.present();
-        
+
         // Focus the cancel button by default
         cancel_button.grab_focus();
     }
-    
+
     pub fn widget(&self) -> &Button {
         &self.button
     }

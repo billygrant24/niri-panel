@@ -1,9 +1,9 @@
+use anyhow::Result;
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc;
-use anyhow::Result;
-use notify::{Watcher, RecursiveMode, Config, Event, EventKind, RecommendedWatcher};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,14 +73,12 @@ impl Default for PanelConfig {
 impl Default for GitConfig {
     fn default() -> Self {
         Self {
-            repositories: vec![
-                GitRepository {
-                    name: "Example Repo".to_string(),
-                    path: "~/Projects/example-repo".to_string(),
-                    service: "github".to_string(),
-                    url: "https://github.com/username/example-repo".to_string(),
-                },
-            ],
+            repositories: vec![GitRepository {
+                name: "Example Repo".to_string(),
+                path: "~/Projects/example-repo".to_string(),
+                service: "github".to_string(),
+                url: "https://github.com/username/example-repo".to_string(),
+            }],
             services: vec![
                 GitService {
                     name: "github".to_string(),
@@ -100,7 +98,7 @@ impl Default for GitConfig {
 impl PanelConfig {
     pub fn load() -> Result<Self> {
         let config_path = Self::config_path()?;
-        
+
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)?;
             let config: Self = toml::from_str(&content)?;
@@ -112,33 +110,33 @@ impl PanelConfig {
             Ok(config)
         }
     }
-    
+
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
         let config_dir = config_path.parent().unwrap();
-        
+
         fs::create_dir_all(config_dir)?;
         let content = toml::to_string_pretty(self)?;
         fs::write(config_path, content)?;
-        
+
         Ok(())
     }
-    
+
     pub fn config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
+        let config_dir =
+            dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
         Ok(config_dir.join("niri-panel").join("config.toml"))
     }
-    
+
     pub fn watch_config_changes() -> Result<mpsc::Receiver<Event>> {
         let (tx, rx) = mpsc::channel();
-        
+
         let config_path = Self::config_path()?;
         let config_dir = config_path.parent().unwrap();
-        
+
         // Create the directory if it doesn't exist
         fs::create_dir_all(config_dir)?;
-        
+
         // Create a watcher
         let mut watcher = RecommendedWatcher::new(
             move |res| {
@@ -146,19 +144,19 @@ impl PanelConfig {
                     let _ = tx.send(event);
                 }
             },
-            Config::default().with_poll_interval(Duration::from_secs(1))
+            Config::default().with_poll_interval(Duration::from_secs(1)),
         )?;
-        
+
         // Watch the config directory
         watcher.watch(config_dir, RecursiveMode::NonRecursive)?;
-        
+
         // Store watcher in a thread-local to keep it alive
         std::thread::spawn(move || {
             // This thread keeps the watcher alive
             std::thread::park();
             drop(watcher); // Explicitly drop to silence warnings
         });
-        
+
         Ok(rx)
     }
 }
