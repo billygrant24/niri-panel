@@ -5,6 +5,7 @@ use tracing::{info, error, warn};
 use tracing_subscriber;
 use std::rc::Rc;
 use std::cell::RefCell;
+use notify::{Event, EventKind};
 
 mod panel;
 mod widgets;
@@ -77,7 +78,7 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     let active_popovers = Rc::new(RefCell::new(0));
     
     // Create and setup panel with keyboard mode management
-    let panel = Panel::new(config, window_weak, active_popovers)?;
+    let panel = Panel::new(config.clone(), window_weak.clone(), active_popovers.clone())?;
     window.set_child(Some(panel.container()));
     
     // Apply CSS styling
@@ -102,6 +103,89 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
         Err(e) => {
             error!("Failed to load CSS data: {}", e);
         }
+    }
+    
+    // Set up config file watching
+    if let Ok(rx) = PanelConfig::watch_config_changes() {
+        let app_weak = app.downgrade();
+        let config_path = match PanelConfig::config_path() {
+            Ok(path) => path.to_string_lossy().to_string(),
+            Err(_) => String::from("config file")
+        };
+        
+        // Add an event source to handle config file changes
+        let channel = gtk4::glib::MainContext::channel(gtk4::glib::Priority::DEFAULT);
+        let (sender, receiver) = channel;
+        
+        // Spawn a thread to listen for file events and send them to the main context
+        std::thread::spawn(move || {
+            while let Ok(event) = rx.recv() {
+                let _ = sender.send(event);
+            }
+        });
+        
+        // Handle events in the main thread
+        receiver.attach(None, move |event: Event| {
+            if let Some(app) = app_weak.upgrade() {
+                if let EventKind::Modify(_) | EventKind::Create(_) = event.kind {
+                    // Check if the event is for our config file
+                    for path in event.paths {
+                        let path_str = path.to_string_lossy();
+                        if path_str.ends_with("config.toml") {
+                            info!("Config file changed: {}", path_str);
+                            
+                            // Try to load the new configuration
+                            match PanelConfig::load() {
+                                Ok(new_config) => {
+                                    info!("Reloading configuration");
+                                    
+                                    // Get the current window
+                                    let windows = app.windows();
+                                    if !windows.is_empty() {
+                                        // Assuming the first window is the panel
+                                        let window = windows.first().unwrap();
+                                        
+                                        // Convert the window to ApplicationWindow
+                                        if let Some(app_window) = window.downcast_ref::<ApplicationWindow>() {
+                                            // Create window weak reference
+                                            let window_weak = app_window.downgrade();
+                                            let active_popovers = Rc::new(RefCell::new(0));
+                                            
+                                            // Create new panel with new config
+                                            if let Ok(panel) = Panel::new(
+                                                new_config.clone(),
+                                                window_weak,
+                                                active_popovers
+                                            ) {
+                                                // Update window height if changed
+                                                window.set_height_request(new_config.height);
+                                                app_window.set_exclusive_zone(new_config.height);
+                                                
+                                                // Replace the old panel with the new one
+                                                window.set_child(Some(panel.container()));
+                                                info!("Panel reloaded with new configuration");
+                                            } else {
+                                                error!("Failed to create new panel with updated config");
+                                            }
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    error!("Failed to load new configuration: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Continue receiving events
+            gtk4::glib::ControlFlow::Continue
+        });
+        
+        info!("Watching for changes to {}", config_path);
+    } else {
+        warn!("Failed to set up config file watcher");
     }
     
     window.present();
