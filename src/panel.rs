@@ -51,6 +51,11 @@ impl Panel {
         let overview = Overview::new()?;
         left_box.append(overview.widget());
 
+        if config.show_workspaces {
+            let workspaces = Workspaces::new()?;
+            left_box.append(workspaces.widget());
+        }
+        
         if config.show_launcher {
             let launcher = Launcher::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(launcher.widget());
@@ -74,11 +79,6 @@ impl Panel {
         if config.show_secrets {
             let secrets = Secrets::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(secrets.widget());
-        }
-
-        if config.show_workspaces {
-            let workspaces = Workspaces::new()?;
-            left_box.append(workspaces.widget());
         }
 
         if config.show_sound {
