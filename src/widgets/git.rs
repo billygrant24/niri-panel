@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Button, Orientation, Image, Popover, ApplicationWindow};
+use gtk4::{Box, Label, Button, Orientation, Popover, ApplicationWindow};
 use gtk4_layer_shell::{LayerShell};
 use gtk4::glib::WeakRef;
 use std::rc::Rc;
@@ -22,14 +22,10 @@ impl Git {
         let container = Box::new(Orientation::Horizontal, 5);
         
         // Placeholder for Nerd Font icon
-        let icon = Label::new(Some("[NF]"));
+        let icon = Label::new(Some("󰊢"));
         icon.add_css_class("git-icon");
         
-        let arrow = Image::from_icon_name("pan-down-symbolic");
-        arrow.set_pixel_size(10);
-        
         container.append(&icon);
-        container.append(&arrow);
         button.set_child(Some(&container));
         
         // Create popover for git details

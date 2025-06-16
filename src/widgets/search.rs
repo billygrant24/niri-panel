@@ -163,7 +163,6 @@ impl Search {
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("search-popover");
-        popover.set_has_arrow(false);
         popover.set_autohide(true);
         
         // Handle popover show event - enable keyboard mode

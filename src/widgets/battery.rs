@@ -37,7 +37,6 @@ enum PowerProfile {
 
 #[derive(Debug)]
 struct SystemStats {
-    uptime: String,
     cpu_usage: f32,
     temperature: Option<f32>,
     power_consumption: Option<f32>,
@@ -164,12 +163,10 @@ impl Battery {
         popover_box.append(&stats_label);
         
         // Stats labels
-        let uptime_label = Self::create_stat_label("Uptime", "0m");
         let cpu_label = Self::create_stat_label("CPU Usage", "0%");
         let temp_label = Self::create_stat_label("Temperature", "N/A");
         let power_label = Self::create_stat_label("Power Draw", "N/A");
         
-        popover_box.append(&uptime_label);
         popover_box.append(&cpu_label);
         popover_box.append(&temp_label);
         popover_box.append(&power_label);
@@ -343,7 +340,7 @@ impl Battery {
         
         // Update battery status immediately
         Self::update_battery(&icon, &label, &status_label, &time_label, &profiles_list,
-                           &uptime_label, &cpu_label, &temp_label, &power_label);
+                           &cpu_label, &temp_label, &power_label);
         
         // Update every 30 seconds for battery, every 2 seconds for stats when visible
         let icon_weak = icon.downgrade();
@@ -351,7 +348,6 @@ impl Battery {
         let status_label_weak = status_label.downgrade();
         let time_label_weak = time_label.downgrade();
         let profiles_list_weak = profiles_list.downgrade();
-        let uptime_weak = uptime_label.downgrade();
         let cpu_weak = cpu_label.downgrade();
         let temp_weak = temp_label.downgrade();
         let power_weak = power_label.downgrade();
@@ -362,12 +358,12 @@ impl Battery {
             if let Some(popover) = popover_weak.upgrade() {
                 if popover.is_visible() {
                     if let (Some(icon), Some(label), Some(status), Some(time), Some(profiles),
-                            Some(uptime), Some(cpu), Some(temp), Some(power)) = 
+                            Some(cpu), Some(temp), Some(power)) = 
                         (icon_weak.upgrade(), label_weak.upgrade(), status_label_weak.upgrade(), 
                          time_label_weak.upgrade(), profiles_list_weak.upgrade(),
-                         uptime_weak.upgrade(), cpu_weak.upgrade(), temp_weak.upgrade(), power_weak.upgrade()) {
+                        cpu_weak.upgrade(), temp_weak.upgrade(), power_weak.upgrade()) {
                         Self::update_battery(&icon, &label, &status, &time, &profiles,
-                                           &uptime, &cpu, &temp, &power);
+                                        &cpu, &temp, &power);
                     }
                 }
                 glib::ControlFlow::Continue
@@ -540,7 +536,7 @@ impl Battery {
     }
     
     fn update_battery(icon: &Image, label: &Label, status_label: &Label, time_label: &Label, 
-                     profiles_list: &ListBox, uptime_box: &Box, cpu_box: &Box, 
+                     profiles_list: &ListBox, cpu_box: &Box, 
                      temp_box: &Box, power_box: &Box) {
         if let Some(info) = Self::get_battery_info() {
             // Update icon based on battery level and charging status
@@ -587,14 +583,7 @@ impl Battery {
         
         // Update system stats
         let stats = Self::get_system_stats();
-        
-        // Update uptime
-        if let Some(value_label) = uptime_box.last_child() {
-            if let Some(label) = value_label.downcast_ref::<Label>() {
-                label.set_text(&stats.uptime);
-            }
-        }
-        
+      
         // Update CPU
         if let Some(value_label) = cpu_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
@@ -630,30 +619,10 @@ impl Battery {
     
     fn get_system_stats() -> SystemStats {
         let mut stats = SystemStats {
-            uptime: "Unknown".to_string(),
             cpu_usage: 0.0,
             temperature: None,
             power_consumption: None,
         };
-        
-        // Get uptime
-        if let Ok(uptime_content) = fs::read_to_string("/proc/uptime") {
-            if let Some(uptime_str) = uptime_content.split_whitespace().next() {
-                if let Ok(uptime_secs) = uptime_str.parse::<f64>() {
-                    let days = (uptime_secs / 86400.0) as u64;
-                    let hours = ((uptime_secs % 86400.0) / 3600.0) as u64;
-                    let minutes = ((uptime_secs % 3600.0) / 60.0) as u64;
-                    
-                    if days > 0 {
-                        stats.uptime = format!("{}d {}h {}m", days, hours, minutes);
-                    } else if hours > 0 {
-                        stats.uptime = format!("{}h {}m", hours, minutes);
-                    } else {
-                        stats.uptime = format!("{}m", minutes);
-                    }
-                }
-            }
-        }
         
         // Get CPU usage (simple average from /proc/stat)
         if let Ok(stat_content) = fs::read_to_string("/proc/stat") {

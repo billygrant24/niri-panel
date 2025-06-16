@@ -16,6 +16,7 @@ window {
 }
 
 
+.panel button,
 .panel button.clock,
 .panel button.power,
 .panel button.sound,
@@ -24,4 +25,13 @@ window {
 .panel button.network {
 	background: transparent;
 	border: 0;
+}
+
+.panel-right {
+	border-right: 1px solid #4C566A66;
+	padding: 0 10px;
+}
+
+.panel-center {
+	padding: 0 10px;
 }

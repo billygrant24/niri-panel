@@ -15,10 +15,11 @@ impl Overview {
         
         // Try multiple overview/activities icon fallbacks
         let icon_names = vec![
-            "view-app-grid-symbolic",
+            "go-up-symbloc",
             "activities-overview-symbolic",
             "view-fullscreen-symbolic",
             "view-restore-symbolic",
+            "view-app-grid-symbolic",
             "window-restore-symbolic"
         ];
         

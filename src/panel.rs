@@ -21,10 +21,10 @@ impl Panel {
     ) -> Result<Self> {
         let container = Box::new(Orientation::Horizontal, 0);
         container.add_css_class("panel");
-        container.set_margin_top(4);
-        container.set_margin_bottom(4);
-        container.set_margin_start(12);
-        container.set_margin_end(12);
+        container.set_margin_top(0);
+        container.set_margin_bottom(0);
+        container.set_margin_start(5);
+        container.set_margin_end(0);
         
         // Create left box for launcher and workspaces
         let left_box = Box::new(Orientation::Horizontal, 10);
@@ -36,7 +36,7 @@ impl Panel {
         let center_box = Box::new(Orientation::Horizontal, 10);
         center_box.add_css_class("panel-center");
         center_box.set_halign(gtk4::Align::Center);
-        center_box.set_hexpand(true);
+        center_box.set_hexpand(false);
         
         // Create right box for clock and system tray
         let right_box = Box::new(Orientation::Horizontal, 10);
@@ -58,7 +58,9 @@ impl Panel {
             left_box.append(places.widget());
         }
         
-      
+        // Git widget
+        let git = Git::new(window_weak.clone(), active_popovers.clone())?;
+        left_box.append(git.widget());
         
         if config.show_search {
             let search = Search::new(window_weak.clone(), active_popovers.clone())?;
@@ -94,21 +96,21 @@ impl Panel {
             let battery = Battery::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(battery.widget());
         }
-        
-       if config.show_clock {
-            let clock = Clock::new(&config.clock_format, window_weak.clone(), active_popovers.clone())?;
-            right_box.append(clock.widget());
-        }
 
+        if config.show_clock {
+            let clock = Clock::new(&config.clock_format, window_weak.clone(), active_popovers.clone())?;
+            center_box.append(clock.widget());
+        }
+        
         if config.show_power {
             let power = Power::new(window_weak.clone(), active_popovers.clone())?;
-            right_box.append(power.widget());
+            center_box.append(power.widget());
         }
         
         // Pack everything
         container.append(&left_box);
-        container.append(&center_box);
         container.append(&right_box);
+        container.append(&center_box);
         
         Ok(Self {
             container,

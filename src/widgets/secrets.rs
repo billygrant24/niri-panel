@@ -58,6 +58,7 @@ impl Secrets {
         for icon_name in icon_names {
             if gtk4::IconTheme::default().has_icon(icon_name) {
                 image.set_from_icon_name(Some(icon_name));
+                info!("Secrets button icon found: {}", &icon_name);
                 break;
             }
         }
@@ -75,7 +76,6 @@ impl Secrets {
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("secrets-popover");
-        popover.set_has_arrow(false);
         popover.set_autohide(true);
         
         // Handle popover show/hide for keyboard mode

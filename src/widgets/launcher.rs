@@ -61,7 +61,6 @@ impl Launcher {
         popover.set_parent(&button);
         popover.add_css_class("launcher-popover");
         popover.set_autohide(true);
-        popover.set_has_arrow(false);
         
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();

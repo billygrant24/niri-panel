@@ -30,7 +30,6 @@ struct SystemStats {
     hostname: String,
     cpu_model: String,
     uptime: String,
-    cpu_usage: f32,
     memory_usage: (u64, u64), // (used, total) in MB
     disk_usage: (u64, u64),    // (used, total) in GB
     packages: String,
@@ -144,7 +143,6 @@ impl Power {
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("power-popover");
-        popover.set_has_arrow(false);
         popover.set_autohide(true);
         
         // Handle popover show event - enable keyboard mode
@@ -232,7 +230,6 @@ impl Power {
         let hostname_label = Self::create_stat_label("Hostname", "Loading...");
         let cpu_model_label = Self::create_stat_label("CPU", "Loading...");
         let uptime_label = Self::create_stat_label("Uptime", "0m");
-        let cpu_label = Self::create_stat_label("CPU Usage", "0%");
         let memory_label = Self::create_stat_label("Memory", "0 MB / 0 MB");
         let disk_label = Self::create_stat_label("Disk (/)", "0 GB / 0 GB");
         let packages_label = Self::create_stat_label("Packages", "Loading...");
@@ -242,7 +239,6 @@ impl Power {
         stats_inner.append(&hostname_label);
         stats_inner.append(&cpu_model_label);
         stats_inner.append(&uptime_label);
-        stats_inner.append(&cpu_label);
         stats_inner.append(&memory_label);
         stats_inner.append(&disk_label);
         stats_inner.append(&packages_label);
@@ -253,7 +249,7 @@ impl Power {
         
         // Update stats immediately and schedule updates
         Self::update_stats(&os_label, &kernel_label, &hostname_label, &cpu_model_label,
-                          &uptime_label, &cpu_label, &memory_label, &disk_label,
+                          &uptime_label, &memory_label, &disk_label,
                           &packages_label);
         
         let os_weak = os_label.downgrade();
@@ -261,7 +257,6 @@ impl Power {
         let hostname_weak = hostname_label.downgrade();
         let cpu_model_weak = cpu_model_label.downgrade();
         let uptime_weak = uptime_label.downgrade();
-        let cpu_weak = cpu_label.downgrade();
         let memory_weak = memory_label.downgrade();
         let disk_weak = disk_label.downgrade();
         let packages_weak = packages_label.downgrade();
@@ -272,14 +267,14 @@ impl Power {
                 // Only update if popover is visible
                 if popover.is_visible() {
                     if let (Some(os), Some(kernel), Some(hostname), Some(cpu_model),
-                            Some(uptime), Some(cpu), Some(memory), Some(disk),
+                            Some(uptime), Some(memory), Some(disk),
                             Some(packages)) = 
                         (os_weak.upgrade(), kernel_weak.upgrade(), hostname_weak.upgrade(),
-                         cpu_model_weak.upgrade(), uptime_weak.upgrade(), cpu_weak.upgrade(),
+                         cpu_model_weak.upgrade(), uptime_weak.upgrade(),
                          memory_weak.upgrade(), disk_weak.upgrade(),
                          packages_weak.upgrade()) {
                         Self::update_stats(&os, &kernel, &hostname, &cpu_model,
-                                         &uptime, &cpu, &memory, &disk,
+                                         &uptime, &memory, &disk,
                                          &packages);
                     }
                 }
@@ -359,7 +354,7 @@ impl Power {
     }
     
     fn update_stats(os_box: &Box, kernel_box: &Box, hostname_box: &Box, cpu_model_box: &Box,
-                    uptime_box: &Box, cpu_box: &Box, memory_box: &Box, disk_box: &Box,
+                    uptime_box: &Box, memory_box: &Box, disk_box: &Box,
                     packages_box: &Box) {
         let stats = Self::get_system_stats();
         
@@ -398,13 +393,6 @@ impl Power {
             }
         }
         
-        // Update CPU
-        if let Some(value_label) = cpu_box.last_child() {
-            if let Some(label) = value_label.downcast_ref::<Label>() {
-                label.set_text(&format!("{:.1}%", stats.cpu_usage));
-            }
-        }
-        
         // Update Memory
         if let Some(value_label) = memory_box.last_child() {
             if let Some(label) = value_label.downcast_ref::<Label>() {
@@ -435,7 +423,6 @@ impl Power {
             hostname: "Unknown".to_string(),
             cpu_model: "Unknown".to_string(),
             uptime: "Unknown".to_string(),
-            cpu_usage: 0.0,
             memory_usage: (0, 0),
             disk_usage: (0, 0),
             packages: "Unknown".to_string(),
@@ -491,25 +478,6 @@ impl Power {
                         stats.uptime = format!("{}h {}m", hours, minutes);
                     } else {
                         stats.uptime = format!("{}m", minutes);
-                    }
-                }
-            }
-        }
-        
-        // Get CPU usage (simple average from /proc/stat)
-        if let Ok(stat_content) = fs::read_to_string("/proc/stat") {
-            if let Some(cpu_line) = stat_content.lines().next() {
-                let values: Vec<u64> = cpu_line
-                    .split_whitespace()
-                    .skip(1)
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
-                
-                if values.len() >= 4 {
-                    let idle = values[3];
-                    let total: u64 = values.iter().sum();
-                    if total > 0 {
-                        stats.cpu_usage = ((total - idle) as f32 / total as f32) * 100.0;
                     }
                 }
             }

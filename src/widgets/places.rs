@@ -57,19 +57,18 @@ impl Places {
         }
         
         if image.icon_name().is_none() {
+            let label = Label::new(Some("📁"));
+            label.add_css_class("icon-fallback");
+            button.set_child(Some(&label));
         } else {
             image.set_icon_size(gtk4::IconSize::Large);
             button.set_child(Some(&image));
-            let label = Label::new(Some("📁 Places"));
-            label.add_css_class("icon-fallback");
-            button.set_child(Some(&label));
         }
         
         // Create popover for places menu
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("places-popover");
-        popover.set_has_arrow(false);
         
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();
@@ -109,11 +108,6 @@ impl Places {
         let places_content = Self::create_places_tab();
         let places_label = Label::new(Some("Places"));
         notebook.append_page(&places_content, Some(&places_label));
-        
-        // Create Sources tab
-        let sources_content = Self::create_sources_tab();
-        let sources_label = Label::new(Some("Sources"));
-        notebook.append_page(&sources_content, Some(&sources_label));
         
         // Create Servers tab
         let servers_content = Self::create_servers_tab();
@@ -260,27 +254,6 @@ impl Places {
         list_box.append(&recent_button);
         
         scrolled_window.set_child(Some(&list_box));
-        scrolled_window
-    }
-    
-    fn create_sources_tab() -> gtk4::ScrolledWindow {
-        let scrolled_window = gtk4::ScrolledWindow::new();
-        scrolled_window.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
-        scrolled_window.set_max_content_height(500);
-        scrolled_window.set_propagate_natural_height(true);
-        
-        let content_box = Box::new(Orientation::Vertical, 10);
-        content_box.set_margin_top(20);
-        content_box.set_margin_bottom(20);
-        content_box.set_margin_start(20);
-        content_box.set_margin_end(20);
-        
-        // Placeholder content for Sources tab
-        let placeholder_label = Label::new(Some("Sources content goes here"));
-        placeholder_label.add_css_class("dim-label");
-        content_box.append(&placeholder_label);
-        
-        scrolled_window.set_child(Some(&content_box));
         scrolled_window
     }
     

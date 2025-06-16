@@ -155,7 +155,6 @@ impl Clock {
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("calendar-popover");
-        popover.set_has_arrow(false);
         
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();
