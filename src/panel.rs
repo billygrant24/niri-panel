@@ -66,14 +66,14 @@ impl Panel {
             left_box.append(places.widget());
         }
 
-        if config.show_git {
-            let git = Git::new(window_weak.clone(), active_popovers.clone(), &config)?;
-            left_box.append(git.widget());
-        }
-
         if config.show_search {
             let search = Search::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(search.widget());
+        }
+
+        if config.show_git {
+            let git = Git::new(window_weak.clone(), active_popovers.clone(), &config)?;
+            left_box.append(git.widget());
         }
 
         if config.show_secrets {

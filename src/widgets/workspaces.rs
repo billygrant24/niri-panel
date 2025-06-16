@@ -145,7 +145,7 @@ impl Workspaces {
         } else {
             let window_list = ListBox::new();
             window_list.add_css_class("workspace-window-list");
-            window_list.set_selection_mode(gtk4::SelectionMode::None);
+            window_list.set_selection_mode(gtk4::SelectionMode::Single);
 
             for window in &windows {
                 info!("Adding window: {} (id: {})", window.title, window.id);
@@ -206,36 +206,33 @@ impl Workspaces {
 
         hbox.append(&vbox);
 
-        // Focus button
-        let focus_button = Button::from_icon_name("go-jump-symbolic");
-        focus_button.add_css_class("workspace-window-focus");
-        focus_button.set_tooltip_text(Some("Focus this window"));
-
-        let window_id = window.id;
-        let popover_weak_focus = popover_weak.clone();
-        focus_button.connect_clicked(move |_| {
-            Self::focus_window(window_id);
-            if let Some(popover) = popover_weak_focus.upgrade() {
-                popover.popdown();
-            }
-        });
-        hbox.append(&focus_button);
-
         // Close button
         let close_button = Button::from_icon_name("window-close-symbolic");
         close_button.add_css_class("workspace-window-close");
         close_button.set_tooltip_text(Some("Close this window"));
 
         let window_id_close = window.id;
+        let popover_weak_close = popover_weak.clone();
         close_button.connect_clicked(move |_| {
             Self::close_window(window_id_close);
-            if let Some(popover) = popover_weak.upgrade() {
+            if let Some(popover) = popover_weak_close.upgrade() {
                 popover.popdown();
             }
         });
         hbox.append(&close_button);
 
         row.set_child(Some(&hbox));
+        
+        // Add click handler to the row itself
+        let window_id = window.id;
+        let popover_weak_focus = popover_weak.clone();
+        row.connect_activate(move |_| {
+            Self::focus_window(window_id);
+            if let Some(popover) = popover_weak_focus.upgrade() {
+                popover.popdown();
+            }
+        });
+        
         row
     }
 
