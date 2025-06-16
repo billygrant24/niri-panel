@@ -262,7 +262,9 @@ impl Workspaces {
     }
 
     fn update_workspace_ui(container: &Box, state: Rc<RefCell<WorkspacesState>>) {
-        let workspaces = state.borrow().workspaces.clone();
+        // Clone and sort workspaces by ID
+        let mut workspaces = state.borrow().workspaces.clone();
+        workspaces.sort_by_key(|w| w.id);
 
         // Get current buttons
         let mut current_buttons = Vec::new();
@@ -360,6 +362,9 @@ impl Workspaces {
                             active_window_id: workspace_json["active_window_id"].as_u64(),
                         });
                     }
+                    
+                    // Sort workspaces by ID
+                    workspaces.sort_by_key(|w| w.id);
                 }
             }
         } else {
@@ -379,6 +384,9 @@ impl Workspaces {
                     active_window_id: None,
                 });
             }
+            // Sort workspaces by ID (in fallback case this is already sorted,
+            // but we include it for consistency)
+            workspaces.sort_by_key(|w| w.id);
         }
 
         // Get all windows
@@ -452,7 +460,7 @@ impl Workspaces {
         let container_weak = container.downgrade();
         let callback = move |event: NiriEvent| {
             match event {
-                NiriEvent::WorkspacesChanged { workspaces } => {
+                NiriEvent::WorkspacesChanged { mut workspaces } => {
                     debug!("Workspaces changed: {} workspaces", workspaces.len());
                     // Update workspace state
                     state.borrow_mut().workspaces = workspaces;
