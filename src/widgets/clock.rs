@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use tracing::{info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TodoItem {
     id: String,
@@ -138,6 +140,7 @@ impl TodoStore {
 
 pub struct Clock {
     button: Button,
+    popover: Popover,
 }
 
 impl Clock {
@@ -446,6 +449,7 @@ impl Clock {
         let completed_count_for_show = completed_count_label.downgrade();
         let todo_store_for_show = todo_store.clone();
 
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
             // Set calendar to current date and trigger update
             if let (
@@ -487,10 +491,10 @@ impl Clock {
                     &c_count,
                 );
             }
-            popover.popup();
+            popover_ref.popup();
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     fn update_todo_lists(
@@ -824,5 +828,12 @@ impl Clock {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Clock {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

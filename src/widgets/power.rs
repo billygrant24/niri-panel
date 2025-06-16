@@ -10,8 +10,11 @@ use std::rc::Rc;
 use std::time::Duration;
 use tracing::info;
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Power {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -349,11 +352,12 @@ impl Power {
         popover.add_controller(escape_controller);
 
         // Show popover on click
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
-            popover.popup();
+            popover_ref.popup();
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     fn create_stat_label(title: &str, initial_value: &str) -> Box {
@@ -778,5 +782,12 @@ impl Power {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Power {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

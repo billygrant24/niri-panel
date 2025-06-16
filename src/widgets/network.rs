@@ -13,8 +13,11 @@ use std::process::Command;
 use std::rc::Rc;
 use tracing::{info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Network {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -517,13 +520,14 @@ impl Network {
 
         // Show popover on click and force an update
         let update_state_for_click = update_state.clone();
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
             // Force an update when the popover is about to be shown
             *update_state_for_click.borrow_mut() = 1;
-            popover.popup();
+            popover_ref.popup();
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     // Helper method to update just the popover content
@@ -1868,7 +1872,16 @@ impl Network {
     pub fn widget(&self) -> &Button {
         &self.button
     }
-    
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Network {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
+    }
+}
+
+impl Network {
     /// Try multiple methods to get the current WiFi SSID
     fn get_wifi_ssid(interface: &str) -> Option<String> {
         info!("Trying to find SSID for interface {}", interface);

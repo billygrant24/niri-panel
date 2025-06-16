@@ -15,8 +15,11 @@ use std::thread;
 use std::time::Duration;
 use tracing::info;
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Search {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -538,15 +541,16 @@ impl Search {
 
         // Show popover on click
         let search_entry_weak = search_entry.downgrade();
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
-            popover.popup();
+            popover_ref.popup();
             // Focus search entry
             if let Some(entry) = search_entry_weak.upgrade() {
                 entry.grab_focus();
             }
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     fn search_files(query: &str, config: &SearchConfig) -> Vec<SearchResult> {
@@ -1174,5 +1178,12 @@ impl Search {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Search {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

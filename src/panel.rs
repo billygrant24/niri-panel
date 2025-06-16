@@ -63,33 +63,48 @@ impl Panel {
         if config.show_launcher {
             let launcher = Launcher::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(launcher.widget());
-            // We'll add the popover registration directly later
+            // Register launcher popover
+            if let Some(popover) = launcher.popover() {
+                let _ = registry.register("launcher", popover.clone());
+            }
         }
 
         if config.show_places {
             let places = Places::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(places.widget());
+            if let Some(popover) = places.popover() {
+                let _ = registry.register("places", popover.clone());
+            }
         }
 
         if config.show_search {
             let search = Search::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(search.widget());
+            if let Some(popover) = search.popover() {
+                let _ = registry.register("search", popover.clone());
+            }
         }
 
         if config.show_git {
             let git = Git::new(window_weak.clone(), active_popovers.clone(), &config)?;
             left_box.append(git.widget());
+            if let Some(popover) = git.popover() {
+                let _ = registry.register("git", popover.clone());
+            }
         }
 
         if config.show_secrets {
             let secrets = Secrets::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(secrets.widget());
+            if let Some(popover) = secrets.popover() {
+                let _ = registry.register("secrets", popover.clone());
+            }
         }
 
         if config.show_sound {
             let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(sound.widget());
-            // Example of direct popover registration for Sound widget
+            // Register sound popover
             if let Some(popover) = sound.popover() {
                 let _ = registry.register("sound", popover.clone());
             }
@@ -98,16 +113,25 @@ impl Panel {
         if config.show_bluetooth {
             let bluetooth = Bluetooth::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(bluetooth.widget());
+            if let Some(popover) = bluetooth.popover() {
+                let _ = registry.register("bluetooth", popover.clone());
+            }
         }
 
         if config.show_network {
             let network = Network::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(network.widget());
+            if let Some(popover) = network.popover() {
+                let _ = registry.register("network", popover.clone());
+            }
         }
 
         if config.show_battery {
             let battery = Battery::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(battery.widget());
+            if let Some(popover) = battery.popover() {
+                let _ = registry.register("battery", popover.clone());
+            }
         }
 
         if config.show_clock {
@@ -117,11 +141,17 @@ impl Panel {
                 active_popovers.clone(),
             )?;
             center_box.append(clock.widget());
+            if let Some(popover) = clock.popover() {
+                let _ = registry.register("clock", popover.clone());
+            }
         }
 
         if config.show_power {
             let power = Power::new(window_weak.clone(), active_popovers.clone())?;
             center_box.append(power.widget());
+            if let Some(popover) = power.popover() {
+                let _ = registry.register("power", popover.clone());
+            }
         }
 
         // Pack everything

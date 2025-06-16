@@ -13,8 +13,11 @@ use std::process::Command;
 use std::rc::Rc;
 use tracing::{error, info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Git {
     button: Button,
+    popover: Popover,
     repositories: Rc<RefCell<Vec<GitRepository>>>,
     services: Rc<RefCell<Vec<GitService>>>,
 }
@@ -206,8 +209,9 @@ impl Git {
 
         // Show popover on click
         let search_entry_weak = search_entry.downgrade();
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
-            popover.popup();
+            popover_ref.popup();
             // Focus search entry
             if let Some(entry) = search_entry_weak.upgrade() {
                 entry.grab_focus();
@@ -216,6 +220,7 @@ impl Git {
 
         Ok(Self {
             button,
+            popover,
             repositories,
             services,
         })
@@ -441,5 +446,12 @@ impl Git {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Git {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

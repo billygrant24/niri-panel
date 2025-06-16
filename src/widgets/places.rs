@@ -13,8 +13,11 @@ use std::process::Command;
 use std::rc::Rc;
 use tracing::{error, info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Places {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +150,7 @@ impl Places {
             popover_clone.popup();
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     fn create_places_tab() -> gtk4::ScrolledWindow {
@@ -734,5 +737,12 @@ impl Places {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Places {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

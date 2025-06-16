@@ -18,8 +18,11 @@ use std::rc::Rc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Secrets {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -124,7 +127,10 @@ impl Secrets {
                 popover.popup();
             });
 
-            return Ok(Self { button });
+            // Create a dummy popover that won't be used
+            let dummy_popover = Popover::new();
+            dummy_popover.set_parent(&button);
+            return Ok(Self { button, popover: dummy_popover });
         }
 
         // Search entry
@@ -230,14 +236,15 @@ impl Secrets {
 
         // Show popover on click
         let search_entry_weak = search_entry.downgrade();
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
-            popover.popup();
+            popover_ref.popup();
             if let Some(search) = search_entry_weak.upgrade() {
                 search.grab_focus();
             }
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     fn check_pass_available() -> bool {
@@ -806,6 +813,13 @@ impl Secrets {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Secrets {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }
 

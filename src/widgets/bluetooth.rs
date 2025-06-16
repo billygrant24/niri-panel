@@ -14,8 +14,11 @@ use std::rc::Rc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Bluetooth {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -357,11 +360,12 @@ impl Bluetooth {
         popover.add_controller(escape_controller);
 
         // Show popover on click
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
-            popover.popup();
+            popover_ref.popup();
         });
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
 
     fn check_bluetooth_available() -> bool {
@@ -828,5 +832,12 @@ impl Bluetooth {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+}
+
+// Implementation of Widget trait
+impl WidgetTrait for Bluetooth {
+    fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }
