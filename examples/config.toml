@@ -10,6 +10,7 @@ show_sound = true
 show_bluetooth = true
 show_power = true
 show_git = true
+show_secrets = true
 clock_format = "%a %b %e %l:%M %p"
 launcher_icon = "view-app-grid-symbolic"
 

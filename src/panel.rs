@@ -68,10 +68,10 @@ impl Panel {
             left_box.append(search.widget());
         }
         
-        // if config.show_secrets {
+        if config.show_secrets {
             let secrets = Secrets::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(secrets.widget());
-        // }
+        }
         
         if config.show_workspaces {
             let workspaces = Workspaces::new()?;
