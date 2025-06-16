@@ -8,6 +8,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber;
 
 mod config;
+mod niri_ipc;
 mod panel;
 mod widgets;
 
@@ -40,6 +41,7 @@ fn main() -> anyhow::Result<()> {
 
     // Run the application
     app.run();
+    
     Ok(())
 }
 

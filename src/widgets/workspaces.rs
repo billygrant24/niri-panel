@@ -2,61 +2,64 @@ use anyhow::Result;
 use gtk4::prelude::*;
 use gtk4::{Box, Button, Image, Label, ListBox, ListBoxRow, Orientation, Popover};
 use serde_json::Value;
-use std::process::Command;
-use tracing::{info, warn};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::process::{Child, Command};
+use std::rc::Rc;
+use tracing::{debug, error, info, warn};
+
+use crate::niri_ipc::{self, NiriEvent, WindowInfo, WorkspaceInfo};
 
 pub struct Workspaces {
     container: Box,
+    // Shared state for workspaces and windows
+    state: Rc<RefCell<WorkspacesState>>,
+    // Keep the child process alive
+    _event_stream_child: Option<Child>,
+    // Keep the GLib source ID for cleanup
+    _event_source_id: Option<gtk4::glib::SourceId>,
 }
 
-#[derive(Debug, Clone)]
-struct WindowInfo {
-    id: u64,
-    title: String,
-    app_id: Option<String>,
-    workspace_id: u64,
-}
-
-#[derive(Debug, Clone)]
-struct WorkspaceInfo {
-    id: u64,
-    idx: u32,
-    #[allow(dead_code)]
-    is_active: bool,
-    is_focused: bool,
+#[derive(Default)]
+struct WorkspacesState {
+    workspaces: Vec<WorkspaceInfo>,
     windows: Vec<WindowInfo>,
+    workspace_id_to_button: HashMap<u64, gtk4::glib::WeakRef<Button>>,
 }
 
 impl Workspaces {
     pub fn new() -> Result<Self> {
         let container = Box::new(Orientation::Horizontal, 5);
         container.add_css_class("workspaces");
-
+        
+        let state = Rc::new(RefCell::new(WorkspacesState::default()));
+        
         // Get initial workspace info
-        let workspaces = Self::get_workspace_info();
-
-        // Create workspace buttons
-        for workspace in &workspaces {
-            let button = Self::create_workspace_button(workspace);
-            container.append(&button);
+        let (initial_workspaces, initial_windows) = Self::get_initial_state()?;
+        
+        // Update state with initial data
+        {
+            let mut state_mut = state.borrow_mut();
+            state_mut.workspaces = initial_workspaces;
+            state_mut.windows = initial_windows;
         }
-
-        // Set up periodic updates
-        let container_weak = container.downgrade();
-        glib::timeout_add_seconds_local(2, move || {
-            if let Some(container) = container_weak.upgrade() {
-                Self::update_workspaces(&container);
-                glib::ControlFlow::Continue
-            } else {
-                glib::ControlFlow::Break
-            }
-        });
-
-        Ok(Self { container })
+        
+        // Create workspace buttons
+        Self::update_workspace_ui(&container, state.clone());
+        
+        // Set up event stream
+        let (event_source_id, event_stream_child) = Self::setup_event_stream(container.clone(), state.clone())?;
+        
+        Ok(Self { 
+            container, 
+            state,
+            _event_stream_child: Some(event_stream_child),
+            _event_source_id: Some(event_source_id),
+        })
     }
 
-    fn create_workspace_button(workspace: &WorkspaceInfo) -> Button {
-        let button = Button::with_label(&workspace.idx.to_string());
+    fn create_workspace_button(workspace: &WorkspaceInfo, state: Rc<RefCell<WorkspacesState>>) -> Button {
+        let button = Button::with_label(&workspace.id.to_string());
         button.add_css_class("workspace");
 
         if workspace.is_focused {
@@ -65,6 +68,9 @@ impl Workspaces {
 
         // Store workspace info in widget name (safer than set_data)
         button.set_widget_name(&format!("{}:{}", workspace.id, workspace.idx));
+        
+        // Store button reference in state
+        state.borrow_mut().workspace_id_to_button.insert(workspace.id, button.downgrade());
 
         info!(
             "Creating button for workspace {} with id {}",
@@ -126,38 +132,27 @@ impl Workspaces {
         title_label.set_halign(gtk4::Align::Start);
         popover_box.append(&title_label);
 
-        // Get current windows for this workspace
-        let workspaces = Self::get_workspace_info();
-        info!("Found {} workspaces total", workspaces.len());
+        // Get current windows for this workspace using niri msg windows
+        let windows = Self::get_windows_for_workspace(workspace_id);
+        info!("Found {} windows for workspace {}", windows.len(), workspace_id);
 
-        // We need to find the workspace by ID exactly, not by index
-        // This ensures windows are associated with the correct workspace
-        if let Some(workspace) = workspaces.iter().find(|w| w.id == workspace_id) {
-            info!("Found workspace with {} windows", workspace.windows.len());
-
-            if workspace.windows.is_empty() {
-                let empty_label = Label::new(Some("No windows"));
-                empty_label.add_css_class("workspace-empty-label");
-                empty_label.set_margin_top(20);
-                empty_label.set_margin_bottom(20);
-                popover_box.append(&empty_label);
-            } else {
-                let window_list = ListBox::new();
-                window_list.add_css_class("workspace-window-list");
-                window_list.set_selection_mode(gtk4::SelectionMode::None);
-
-                for window in &workspace.windows {
-                    info!("Adding window: {} (id: {})", window.title, window.id);
-                    let row = Self::create_window_row(window, popover.downgrade());
-                    window_list.append(&row);
-                }
-                popover_box.append(&window_list);
-            }
+        if windows.is_empty() {
+            let empty_label = Label::new(Some("No windows"));
+            empty_label.add_css_class("workspace-empty-label");
+            empty_label.set_margin_top(20);
+            empty_label.set_margin_bottom(20);
+            popover_box.append(&empty_label);
         } else {
-            warn!("Could not find workspace with id {}", workspace_id);
-            let error_label = Label::new(Some("Error loading windows"));
-            error_label.add_css_class("workspace-empty-label");
-            popover_box.append(&error_label);
+            let window_list = ListBox::new();
+            window_list.add_css_class("workspace-window-list");
+            window_list.set_selection_mode(gtk4::SelectionMode::None);
+
+            for window in &windows {
+                info!("Adding window: {} (id: {})", window.title, window.id);
+                let row = Self::create_window_row(window, popover.downgrade());
+                window_list.append(&row);
+            }
+            popover_box.append(&window_list);
         }
 
         popover.set_child(Some(&popover_box));
@@ -266,8 +261,8 @@ impl Workspaces {
         format!("{}-symbolic", icon)
     }
 
-    fn update_workspaces(container: &Box) {
-        let workspaces = Self::get_workspace_info();
+    fn update_workspace_ui(container: &Box, state: Rc<RefCell<WorkspacesState>>) {
+        let workspaces = state.borrow().workspaces.clone();
 
         // Get current buttons
         let mut current_buttons = Vec::new();
@@ -295,10 +290,13 @@ impl Workspaces {
 
                     // Update stored data
                     button.set_widget_name(&format!("{}:{}", workspace.id, workspace.idx));
+                    
+                    // Update button reference in state
+                    state.borrow_mut().workspace_id_to_button.insert(workspace.id, button.downgrade());
                 }
             } else {
                 // Add new button if needed
-                let button = Self::create_workspace_button(workspace);
+                let button = Self::create_workspace_button(workspace, state.clone());
                 container.append(&button);
             }
         }
@@ -306,72 +304,34 @@ impl Workspaces {
         // Remove extra buttons
         while current_buttons.len() > workspaces.len() {
             if let Some(button) = current_buttons.pop() {
+                // Remove from state if it exists
+                if let Some(button) = button.downcast_ref::<Button>() {
+                    let name = button.widget_name();
+                    if let Some(id_str) = name.split(':').next() {
+                        if let Ok(id) = id_str.parse::<u64>() {
+                            state.borrow_mut().workspace_id_to_button.remove(&id);
+                        }
+                    }
+                }
                 container.remove(&button);
             }
         }
     }
 
-    fn get_workspace_info() -> Vec<WorkspaceInfo> {
+    fn get_initial_state() -> Result<(Vec<WorkspaceInfo>, Vec<WindowInfo>)> {
         let mut workspaces = Vec::new();
+        let mut windows = Vec::new();
 
         // Get workspace information first
         if let Ok(output) = Command::new("niri")
             .args(&["msg", "-j", "workspaces"])
             .output()
         {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            info!("Raw workspace output: {}", output_str);
-
             if let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) {
                 if let Some(workspaces_array) = json.as_array() {
-                    // Get all windows
-                    let mut all_windows: Vec<WindowInfo> = Vec::new();
-                    if let Ok(windows_output) = Command::new("niri")
-                        .args(&["msg", "-j", "windows"])
-                        .output()
-                    {
-                        if let Ok(windows_json) =
-                            serde_json::from_slice::<Value>(&windows_output.stdout)
-                        {
-                            if let Some(windows_array) = windows_json.as_array() {
-                                for window_json in windows_array {
-                                    // Make sure we extract all required fields and validate the data
-                                    // This ensures we don't collect windows with incomplete information
-                                    if let (Some(id), Some(title)) = (
-                                        window_json["id"].as_u64(),
-                                        window_json["title"].as_str(),
-                                    ) {
-                                        // The workspace_id is critical - it must match exactly with
-                                        // the workspace_id reported in the workspaces output
-                                        let workspace_id = match window_json["workspace_id"].as_u64() {
-                                            Some(wid) => wid,
-                                            None => {
-                                                warn!("Window {} missing workspace_id, skipping", id);
-                                                continue;
-                                            }
-                                        };
-                                        
-                                        all_windows.push(WindowInfo {
-                                            id,
-                                            title: title.to_string(),
-                                            app_id: window_json["app_id"]
-                                                .as_str()
-                                                .map(|s| s.to_string()),
-                                            workspace_id,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Print windows json for debugging
-                    info!("All windows: {:?}", all_windows);
-
                     // Create workspace info with proper IDs
                     for (idx, workspace_json) in workspaces_array.iter().enumerate() {
                         // Extract the actual workspace ID from the Niri JSON
-                        // The workspace_id in windows must match this exact ID
                         let workspace_id = match workspace_json["id"].as_u64() {
                             Some(id) => id,
                             None => {
@@ -379,25 +339,7 @@ impl Workspaces {
                                 (idx + 1) as u64 // Fallback to index+1 if id is missing
                             }
                         };
-                        let is_active = workspace_json["is_active"].as_bool().unwrap_or(false);
-                        let is_focused = workspace_json["is_focused"].as_bool().unwrap_or(false);
-
-                        info!("Workspace {} has id {}", idx, workspace_id);
-
-                        // Get windows for this workspace - exact ID matching is critical
-                        let windows: Vec<WindowInfo> = all_windows
-                            .iter()
-                            .filter(|w| w.workspace_id == workspace_id)
-                            .cloned()
-                            .collect();
-
-                        info!(
-                            "Workspace {} (id {}) has {} windows",
-                            idx,
-                            workspace_id,
-                            windows.len()
-                        );
-
+                        
                         // Get the idx field from the JSON (display number)
                         let idx_from_json = workspace_json["idx"].as_u64().unwrap_or_else(|| {
                             warn!("Missing idx for workspace ID {}, using index+1", workspace_id);
@@ -406,40 +348,164 @@ impl Workspaces {
                         
                         workspaces.push(WorkspaceInfo {
                             id: workspace_id,
-                            // Use the idx from the JSON as the display number
-                            // This matches what Niri shows in the UI
                             idx: idx_from_json as u32,
-                            is_active,
-                            is_focused,
-                            windows,
+                            name: workspace_json["name"].as_str().map(ToString::to_string),
+                            output: workspace_json["output"]
+                                .as_str()
+                                .unwrap_or("eDP-1")
+                                .to_string(),
+                            is_urgent: workspace_json["is_urgent"].as_bool().unwrap_or(false),
+                            is_active: workspace_json["is_active"].as_bool().unwrap_or(false),
+                            is_focused: workspace_json["is_focused"].as_bool().unwrap_or(false),
+                            active_window_id: workspace_json["active_window_id"].as_u64(),
                         });
                     }
+                }
+            }
+        } else {
+            // Fallback: create default empty workspaces (1-4)
+            warn!("Could not get workspace info from niri, using defaults");
+            for i in 1..=4 {
+                let workspace_id = i as u64;
+                let display_idx = i;
+                workspaces.push(WorkspaceInfo {
+                    id: workspace_id,
+                    idx: display_idx,
+                    name: None,
+                    output: "eDP-1".to_string(),
+                    is_urgent: false,
+                    is_active: i == 1,
+                    is_focused: i == 1,
+                    active_window_id: None,
+                });
+            }
+        }
 
-                    // Sort workspaces by idx to maintain order
-                    workspaces.sort_by_key(|w| w.idx);
-
-                    return workspaces;
+        // Get all windows
+        if let Ok(output) = Command::new("niri").args(&["msg", "-j", "windows"]).output() {
+            if let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) {
+                if let Some(windows_array) = json.as_array() {
+                    for window_json in windows_array {
+                        if let (Some(id), Some(title), Some(workspace_id)) = (
+                            window_json["id"].as_u64(),
+                            window_json["title"].as_str(),
+                            window_json["workspace_id"].as_u64(),
+                        ) {
+                            windows.push(WindowInfo {
+                                id,
+                                title: title.to_string(),
+                                app_id: window_json["app_id"].as_str().map(ToString::to_string),
+                                pid: window_json["pid"].as_u64().unwrap_or(0),
+                                workspace_id,
+                                is_focused: window_json["is_focused"].as_bool().unwrap_or(false),
+                                is_floating: window_json["is_floating"].as_bool().unwrap_or(false),
+                                is_urgent: window_json["is_urgent"].as_bool().unwrap_or(false),
+                            });
+                        }
+                    }
                 }
             }
         }
 
-        // Fallback: create default empty workspaces (1-4)
-        warn!("Could not get workspace info from niri, using defaults");
-        // Create workspaces with ID matching display number
-        // This follows Niri's default setup where workspace 1 has ID 1, etc.
-        for i in 1..=4 {
-            let workspace_id = i as u64;
-            let display_idx = i;
-            workspaces.push(WorkspaceInfo {
-                id: workspace_id,    // ID used for window assignment
-                idx: display_idx,    // Display number shown in UI
-                is_active: i == 1,
-                is_focused: i == 1,
-                windows: Vec::new(),
-            });
-        }
+        Ok((workspaces, windows))
+    }
 
-        workspaces
+    fn get_windows_for_workspace(workspace_id: u64) -> Vec<WindowInfo> {
+        let mut windows = Vec::new();
+        
+        if let Ok(output) = Command::new("niri").args(&["msg", "-j", "windows"]).output() {
+            if let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) {
+                if let Some(windows_array) = json.as_array() {
+                    for window_json in windows_array {
+                        if let (Some(id), Some(title), Some(wid)) = (
+                            window_json["id"].as_u64(),
+                            window_json["title"].as_str(),
+                            window_json["workspace_id"].as_u64(),
+                        ) {
+                            // Only include windows for the requested workspace
+                            if wid == workspace_id {
+                                windows.push(WindowInfo {
+                                    id,
+                                    title: title.to_string(),
+                                    app_id: window_json["app_id"].as_str().map(ToString::to_string),
+                                    pid: window_json["pid"].as_u64().unwrap_or(0),
+                                    workspace_id,
+                                    is_focused: window_json["is_focused"].as_bool().unwrap_or(false),
+                                    is_floating: window_json["is_floating"].as_bool().unwrap_or(false),
+                                    is_urgent: window_json["is_urgent"].as_bool().unwrap_or(false),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        windows
+    }
+    
+    fn setup_event_stream(
+        container: Box, 
+        state: Rc<RefCell<WorkspacesState>>
+    ) -> Result<(gtk4::glib::SourceId, Child)> {
+        // Set up event stream
+        let container_weak = container.downgrade();
+        let callback = move |event: NiriEvent| {
+            match event {
+                NiriEvent::WorkspacesChanged { workspaces } => {
+                    debug!("Workspaces changed: {} workspaces", workspaces.len());
+                    // Update workspace state
+                    state.borrow_mut().workspaces = workspaces;
+                    
+                    // Update UI
+                    if let Some(container) = container_weak.upgrade() {
+                        Self::update_workspace_ui(&container, state.clone());
+                    }
+                },
+                NiriEvent::WindowsChanged { windows } => {
+                    debug!("Windows changed: {} windows", windows.len());
+                    // Update window state
+                    state.borrow_mut().windows = windows;
+                },
+                NiriEvent::WorkspaceActivated { id, focused } => {
+                    debug!("Workspace activated: {} (focused: {})", id, focused);
+                    
+                    // Update active state in workspace info
+                    {
+                        let mut state_mut = state.borrow_mut();
+                        for workspace in &mut state_mut.workspaces {
+                            workspace.is_active = workspace.id == id;
+                            if workspace.id == id {
+                                workspace.is_focused = focused;
+                            } else if focused {
+                                workspace.is_focused = false;
+                            }
+                        }
+                        
+                        // Update button active state directly without full UI refresh
+                        if focused {
+                            // If this workspace is focused, update button states
+                            for (ws_id, button_weak) in &state_mut.workspace_id_to_button {
+                                if let Some(button) = button_weak.upgrade() {
+                                    if *ws_id == id {
+                                        button.add_css_class("active");
+                                    } else {
+                                        button.remove_css_class("active");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                NiriEvent::WindowFocusChanged { id: _ } => {
+                    // We don't need to handle this directly for the workspaces widget
+                    // since we get workspace activation events
+                },
+                _ => {}
+            }
+        };
+        
+        niri_ipc::attach_event_stream(callback)
     }
 
     fn switch_workspace(idx: u32) {
