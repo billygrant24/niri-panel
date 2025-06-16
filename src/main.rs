@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow};
 use gtk4_layer_shell::{Layer, LayerShell};
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use tracing_subscriber;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -18,6 +18,13 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     
     info!("Starting Niri Panel");
+
+    // Check if GSettings schemas are available
+    match gtk4::gio::SettingsSchemaSource::default() {
+        Some(_) => info!("GSettings schema source found."),
+        None => warn!("GSettings schema source not found. Some functionality may be limited.")
+    }
+    // We continue anyway as the panel doesn't strictly require these schemas
 
     // Create GTK application
     let app = Application::builder()
@@ -75,13 +82,27 @@ fn build_ui(app: &Application) -> anyhow::Result<()> {
     
     // Apply CSS styling
     let css_provider = gtk4::CssProvider::new();
-    css_provider.load_from_data(include_str!("../assets/style.css"));
     
-    gtk4::style_context_add_provider_for_display(
-        &gtk4::gdk::Display::default().expect("Could not get default display"),
-        &css_provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    // Use a safer way to load CSS that handles errors gracefully
+    match std::str::from_utf8(include_bytes!("../assets/style.css")) {
+        Ok(css_data) => {
+            css_provider.load_from_data(css_data);
+            
+            if let Some(display) = gtk4::gdk::Display::default() {
+                gtk4::style_context_add_provider_for_display(
+                    &display,
+                    &css_provider,
+                    gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                );
+                info!("CSS styles loaded successfully");
+            } else {
+                warn!("Could not get default display for CSS styling");
+            }
+        },
+        Err(e) => {
+            error!("Failed to load CSS data: {}", e);
+        }
+    }
     
     window.present();
     
