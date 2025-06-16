@@ -6,20 +6,51 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use tracing::{error, info, warn};
 use tracing_subscriber;
+use clap::{Parser, Subcommand};
 
-mod config;
-mod niri_ipc;
-mod panel;
-mod widgets;
+use niri_panel::config;
+use niri_panel::ipc;
+use niri_panel::panel;
+use niri_panel::popover_registry;
+use niri_panel::widgets;
+use niri_panel::Widget;
 
 use config::PanelConfig;
+use ipc::{IpcClient, IpcServer};
 use panel::Panel;
+use popover_registry::{PopoverRegistry};
+
+/// Command line arguments for Niri Panel
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Show a specific widget popover
+    Show {
+        /// Widget to show
+        #[arg(value_enum)]
+        widget: Widget,
+    }
+}
 
 fn main() -> anyhow::Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
     info!("Starting Niri Panel");
+
+    // Parse command line arguments
+    let args = Args::parse();
+
+    // Handle commands if any
+    if let Some(command) = args.command {
+        return handle_command(command);
+    }
 
     // Check if GSettings schemas are available
     match gtk4::gio::SettingsSchemaSource::default() {
@@ -45,7 +76,26 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Handle CLI commands
+fn handle_command(command: Commands) -> anyhow::Result<()> {
+    match command {
+        Commands::Show { widget } => {
+            info!("Showing widget: {:?}", widget);
+            // Use the IPC client to show the widget
+            IpcClient::show_widget(widget)?;
+            Ok(())
+        }
+    }
+}
+
 fn build_ui(app: &Application) -> anyhow::Result<()> {
+    // Start IPC server
+    let ipc_server = IpcServer::new()?;
+    if let Err(e) = ipc_server.start() {
+        warn!("Failed to start IPC server: {}", e);
+        // Continue anyway as the panel can work without IPC
+    }
+
     // Load configuration
     let config = PanelConfig::load()?;
 

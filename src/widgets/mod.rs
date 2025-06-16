@@ -1,3 +1,5 @@
+use gtk4::Popover;
+
 mod battery;
 mod bluetooth;
 mod clock;
@@ -12,6 +14,14 @@ mod search;
 mod secrets;
 mod sound;
 mod workspaces;
+
+/// Common trait for all widgets that have popovers
+pub trait Widget {
+    /// Get the popover for this widget, if any
+    fn popover(&self) -> Option<&Popover> {
+        None
+    }
+}
 
 pub use battery::Battery;
 pub use bluetooth::Bluetooth;

@@ -18,8 +18,11 @@ use std::thread;
 use std::time::Duration;
 use tracing::{info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Sound {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Debug, Clone)]
@@ -629,8 +632,9 @@ impl Sound {
         }
 
         // Show popover on click
+        let popover_ref = popover.clone();
         button.connect_clicked(move |_| {
-            popover.popup();
+            popover_ref.popup();
         });
 
         // Scroll to change volume
@@ -647,9 +651,9 @@ impl Sound {
         });
         button.add_controller(controller);
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
-
+    
     fn setup_audio_monitor() -> Result<mpsc::Receiver<()>> {
         let (tx, rx) = mpsc::channel();
 
@@ -1449,5 +1453,9 @@ impl Sound {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+    
+    pub fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

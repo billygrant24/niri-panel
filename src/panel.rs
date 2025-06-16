@@ -6,9 +6,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::PanelConfig;
+use crate::popover_registry::PopoverRegistry;
 use crate::widgets::{
     Battery, Bluetooth, Clock, Git, Launcher, Network, Overview, Places, Power, Search, Secrets,
-    Sound, Workspaces,
+    Sound, Widget, Workspaces,
 };
 
 pub struct Panel {
@@ -56,9 +57,13 @@ impl Panel {
             left_box.append(workspaces.widget());
         }
         
+        // Get the global popover registry
+        let registry = PopoverRegistry::global();
+        
         if config.show_launcher {
             let launcher = Launcher::new(window_weak.clone(), active_popovers.clone())?;
             left_box.append(launcher.widget());
+            // We'll add the popover registration directly later
         }
 
         if config.show_places {
@@ -84,6 +89,10 @@ impl Panel {
         if config.show_sound {
             let sound = Sound::new(window_weak.clone(), active_popovers.clone())?;
             right_box.append(sound.widget());
+            // Example of direct popover registration for Sound widget
+            if let Some(popover) = sound.popover() {
+                let _ = registry.register("sound", popover.clone());
+            }
         }
 
         if config.show_bluetooth {

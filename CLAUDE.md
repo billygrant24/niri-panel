@@ -51,6 +51,11 @@ cargo clippy
 
 # Run with automatic reloading on file changes (requires cargo-watch)
 cargo watch -x run
+
+# Control panel widgets from command line
+niri-panel-ctrl show launcher  # Show the launcher popover
+niri-panel-ctrl show sound     # Show the sound popover
+niri-panel-ctrl list           # List available widgets
 ```
 
 ## Project Architecture

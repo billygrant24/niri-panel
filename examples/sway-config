@@ -1,0 +1,19 @@
+# Example Sway config for niri-panel integration
+
+# Application launcher
+bindsym $mod+a exec niri-panel-ctrl show launcher
+
+# Sound control panel
+bindsym $mod+s exec niri-panel-ctrl show sound
+
+# Network control panel
+bindsym $mod+n exec niri-panel-ctrl show network
+
+# Bluetooth control panel
+bindsym $mod+b exec niri-panel-ctrl show bluetooth
+
+# Calendar
+bindsym $mod+c exec niri-panel-ctrl show clock
+
+# Power menu
+bindsym $mod+p exec niri-panel-ctrl show power

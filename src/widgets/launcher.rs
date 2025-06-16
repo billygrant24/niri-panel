@@ -13,8 +13,11 @@ use std::process::Command;
 use std::rc::Rc;
 use tracing::{info, warn};
 
+use crate::widgets::Widget as WidgetTrait;
+
 pub struct Launcher {
     button: Button,
+    popover: Popover,
 }
 
 #[derive(Clone, Debug)]
@@ -223,9 +226,9 @@ impl Launcher {
         });
         button.add_controller(gesture);
 
-        Ok(Self { button })
+        Ok(Self { button, popover })
     }
-
+    
     fn load_applications() -> Vec<AppInfo> {
         let mut apps = Vec::new();
 
@@ -511,5 +514,9 @@ impl Launcher {
 
     pub fn widget(&self) -> &Button {
         &self.button
+    }
+    
+    pub fn popover(&self) -> Option<&Popover> {
+        Some(&self.popover)
     }
 }

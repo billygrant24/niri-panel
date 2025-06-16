@@ -1,0 +1,21 @@
+# Example keybindings for Niri
+
+# Niri key bindings that integrate with niri-panel
+[bindings]
+# Application launcher
+"super+a" = "exec niri-panel-ctrl show launcher"
+
+# Sound control panel
+"super+s" = "exec niri-panel-ctrl show sound"
+
+# Network control panel
+"super+n" = "exec niri-panel-ctrl show network"
+
+# Bluetooth control panel
+"super+b" = "exec niri-panel-ctrl show bluetooth" 
+
+# Calendar
+"super+c" = "exec niri-panel-ctrl show clock"
+
+# Power menu
+"super+p" = "exec niri-panel-ctrl show power"
