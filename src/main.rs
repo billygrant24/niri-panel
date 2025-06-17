@@ -35,7 +35,17 @@ enum Commands {
         /// Widget to show
         #[arg(value_enum)]
         widget: Widget,
-    }
+    },
+    /// Hide a specific widget popover
+    Hide {
+        /// Widget to hide
+        #[arg(value_enum)]
+        widget: Widget,
+    },
+    /// List available widgets
+    List,
+    /// Run the panel (default when no subcommand is specified)
+    Run
 }
 
 fn main() -> anyhow::Result<()> {
@@ -48,8 +58,10 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     // Handle commands if any
-    if let Some(command) = args.command {
-        return handle_command(command);
+    let command = args.command.unwrap_or(Commands::Run);
+    match command {
+        Commands::Run => {},
+        _ => return handle_command(command),
     }
 
     // Check if GSettings schemas are available
@@ -82,8 +94,26 @@ fn handle_command(command: Commands) -> anyhow::Result<()> {
         Commands::Show { widget } => {
             info!("Showing widget: {:?}", widget);
             // Use the IPC client to show the widget
-            IpcClient::show_widget(widget)?;
+            let widget_name = widget.to_string().to_lowercase();
+            let response = IpcClient::send_command(&format!("show {}", widget_name))?;
+            println!("{}", response);
             Ok(())
+        },
+        Commands::Hide { widget } => {
+            info!("Hiding widget: {:?}", widget);
+            let widget_name = widget.to_string().to_lowercase();
+            let response = IpcClient::send_command(&format!("hide {}", widget_name))?;
+            println!("{}", response);
+            Ok(())
+        },
+        Commands::List => {
+            let response = IpcClient::send_command("list")?;
+            println!("Available widgets: {}", response);
+            Ok(())
+        },
+        Commands::Run => {
+            // This should never happen as Run is handled in main()
+            unreachable!()
         }
     }
 }

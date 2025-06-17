@@ -33,9 +33,9 @@ nix develop -c cargo run
 # Run in debug mode
 cargo run
 
-# Run the CLI control utility
-./target/release/niri-panel-ctrl list
-niri-panel-ctrl show launcher
+# Use CLI control commands
+./target/release/niri-panel list
+./target/release/niri-panel show launcher
 ```
 
 ### Development Commands
@@ -57,9 +57,9 @@ cargo clippy
 cargo watch -x run
 
 # Control panel widgets from command line
-niri-panel-ctrl show launcher  # Show the launcher popover
-niri-panel-ctrl show sound     # Show the sound popover
-niri-panel-ctrl list           # List available widgets
+niri-panel show launcher  # Show the launcher popover
+niri-panel show sound     # Show the sound popover
+niri-panel list           # List available widgets
 ```
 
 ## Project Architecture

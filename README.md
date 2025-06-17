@@ -24,8 +24,7 @@ A GTK4-based panel for the Niri Wayland compositor, providing system status and 
 # Or using nix directly
 nix build
 
-# Build the CLI control utility
-nix build .#niri-panel-ctrl
+# Both the panel and CLI control are in the same binary
 ```
 
 ### Build with Cargo
@@ -43,8 +42,9 @@ nix develop -c cargo run
 # Run directly
 ./target/release/niri-panel
 
-# Use the CLI control utility
-./result/bin/niri-panel-ctrl list
+# Use the CLI control commands
+./result/bin/niri-panel list
+./result/bin/niri-panel show launcher
 ```
 
 ## Configuration
@@ -57,23 +57,17 @@ Niri Panel provides a command-line interface to control widget popovers. This al
 
 ### Installation via Nix
 
-If you're using Nix, you can install the CLI control utility separately:
-
 ```bash
-# Install just the CLI control utility
-nix profile install .#niri-panel-ctrl
-
-# Or install both the panel and control utility
+# Install the panel (includes CLI controls)
 nix profile install .
-nix profile install .#niri-panel-ctrl
 ```
 
 ### Show a widget popover
 
 ```bash
-niri-panel-ctrl show launcher   # Show the application launcher
-niri-panel-ctrl show sound      # Show the sound control panel
-niri-panel-ctrl show bluetooth  # Show the bluetooth panel
+niri-panel show launcher   # Show the application launcher
+niri-panel show sound      # Show the sound control panel
+niri-panel show bluetooth  # Show the bluetooth panel
 ```
 
 ### Available widgets
@@ -93,7 +87,7 @@ niri-panel-ctrl show bluetooth  # Show the bluetooth panel
 ### List available widgets
 
 ```bash
-niri-panel-ctrl list
+niri-panel list
 ```
 
 ### Integration with Niri
@@ -102,8 +96,8 @@ Add keybindings to your Niri config.toml:
 
 ```toml
 [bindings]
-"super+a" = "exec niri-panel-ctrl show launcher"
-"super+s" = "exec niri-panel-ctrl show sound"
+"super+a" = "exec niri-panel show launcher"
+"super+s" = "exec niri-panel show sound"
 ```
 
 ### Integration with Sway
@@ -111,6 +105,6 @@ Add keybindings to your Niri config.toml:
 Add keybindings to your Sway config:
 
 ```
-bindsym $mod+a exec niri-panel-ctrl show launcher
-bindsym $mod+s exec niri-panel-ctrl show sound
+bindsym $mod+a exec niri-panel show launcher
+bindsym $mod+s exec niri-panel show sound
 ```
