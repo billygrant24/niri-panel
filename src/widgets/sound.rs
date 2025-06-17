@@ -188,8 +188,8 @@ impl Sound {
         // ScrolledWindow for device list (in case there are many devices)
         let device_scroll = gtk4::ScrolledWindow::new();
         device_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
-        device_scroll.set_min_content_height(50);
-        device_scroll.set_max_content_height(150);
+        device_scroll.set_min_content_height(100);
+        device_scroll.set_max_content_height(300);
         device_scroll.set_child(Some(&device_list));
 
         volume_tab.append(&device_scroll);
@@ -653,7 +653,7 @@ impl Sound {
 
         Ok(Self { button, popover })
     }
-    
+
     fn setup_audio_monitor() -> Result<mpsc::Receiver<()>> {
         let (tx, rx) = mpsc::channel();
 
@@ -1454,7 +1454,7 @@ impl Sound {
     pub fn widget(&self) -> &Button {
         &self.button
     }
-    
+
     pub fn popover(&self) -> Option<&Popover> {
         Some(&self.popover)
     }
