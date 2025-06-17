@@ -40,6 +40,7 @@
             gdk-pixbuf
             
             # Icon themes
+            nordzy-icon-theme
             adwaita-icon-theme
             hicolor-icon-theme
             
@@ -64,7 +65,7 @@
             echo "Run 'niri-panel list' to see available widgets"
             
             # Set up icon theme paths
-            export XDG_DATA_DIRS="${pkgs.adwaita-icon-theme}/share:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
+            export XDG_DATA_DIRS="${pkgs.nordzy-icon-theme}/share:${pkgs.adwaita-icon-theme}/share:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
           '';
 
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
