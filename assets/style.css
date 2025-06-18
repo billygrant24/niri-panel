@@ -24,17 +24,14 @@ window {
 .panel button.battery,
 .panel button.network {
 	background: transparent;
+    border-radius: 0;
 	border: 0;
 }
 
-.panel-right {
-	border-right: 1px solid #4C566A66;
-	padding: 0 10px;
-}
-
-.panel-center {
+.panel button.clock {
     background-color: #4C566A66;
-	padding: 0 10px;
+    padding: 0 10px;
+    margin-left: 10px;
 }
 
 button.workspace {
