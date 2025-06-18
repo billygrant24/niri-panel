@@ -9,7 +9,8 @@ window {
 .panel button.sound,
 .panel button.bluetooth,
 .panel button.battery,
-.panel button.network {
+.panel button.network,
+.panel button.servers {
     background: #4C566A66;
     border: 0px solid #4C566A;
     color: #ECEFF4;
@@ -21,7 +22,8 @@ window {
 .panel button.sound,
 .panel button.bluetooth,
 .panel button.battery,
-.panel button.network {
+.panel button.network,
+.panel button.servers {
 	background: transparent;
     border-radius: 0;
 	border: 0;
@@ -141,4 +143,26 @@ button.workspace.active {
 .git-no-results {
     font-style: italic;
     color: #4C566A;
+}
+
+/* Servers widget styles */
+.servers-section-label {
+    font-size: 14px;
+    font-weight: bold;
+    color: #88C0D0;
+}
+
+.servers-item {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.servers-item:hover {
+    background: #3B4252;
+}
+
+.servers-item:active {
+    background: #434C5E;
 }

@@ -12,6 +12,7 @@ pub mod widgets;
 pub enum Widget {
     Launcher,
     Places,
+    Servers,
     Search,
     Git,
     Secrets,
@@ -28,6 +29,7 @@ impl ToString for Widget {
         match self {
             Widget::Launcher => "launcher",
             Widget::Places => "places",
+            Widget::Servers => "servers",
             Widget::Search => "search",
             Widget::Git => "git",
             Widget::Secrets => "secrets",

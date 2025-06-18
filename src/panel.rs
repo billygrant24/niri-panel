@@ -9,7 +9,7 @@ use crate::config::PanelConfig;
 use crate::popover_registry::PopoverRegistry;
 use crate::widgets::{
     Battery, Bluetooth, Clock, Git, Launcher, Network, Overview, Places, Power, Search, Secrets,
-    Sound, Widget, Workspaces,
+    Servers, Sound, Widget, Workspaces,
 };
 
 pub struct Panel {
@@ -74,6 +74,14 @@ impl Panel {
             left_box.append(places.widget());
             if let Some(popover) = places.popover() {
                 let _ = registry.register("places", popover.clone());
+            }
+        }
+        
+        if config.show_servers {
+            let servers = Servers::new(window_weak.clone(), active_popovers.clone())?;
+            left_box.append(servers.widget());
+            if let Some(popover) = servers.popover() {
+                let _ = registry.register("servers", popover.clone());
             }
         }
 

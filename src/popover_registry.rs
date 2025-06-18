@@ -67,6 +67,7 @@ impl PopoverRegistry {
         match widget {
             Widget::Launcher => "launcher",
             Widget::Places => "places",
+            Widget::Servers => "servers",
             Widget::Search => "search",
             Widget::Git => "git",
             Widget::Secrets => "secrets",

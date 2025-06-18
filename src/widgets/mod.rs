@@ -12,6 +12,7 @@ mod places;
 mod power;
 mod search;
 mod secrets;
+mod servers;
 mod sound;
 mod workspaces;
 
@@ -35,5 +36,6 @@ pub use places::Places;
 pub use power::Power;
 pub use search::Search;
 pub use secrets::Secrets;
+pub use servers::Servers;
 pub use sound::Sound;
 pub use workspaces::Workspaces;
