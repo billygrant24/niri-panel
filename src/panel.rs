@@ -148,7 +148,7 @@ impl Panel {
                 window_weak.clone(),
                 active_popovers.clone(),
             )?;
-            center_box.append(clock.widget());
+            right_box.append(clock.widget());
             if let Some(popover) = clock.popover() {
                 let _ = registry.register("clock", popover.clone());
             }
@@ -156,7 +156,7 @@ impl Panel {
 
         if config.show_power {
             let power = Power::new(window_weak.clone(), active_popovers.clone())?;
-            center_box.append(power.widget());
+            right_box.append(power.widget());
             if let Some(popover) = power.popover() {
                 let _ = registry.register("power", popover.clone());
             }
@@ -165,7 +165,7 @@ impl Panel {
         // Pack everything
         container.append(&left_box);
         container.append(&right_box);
-        container.append(&center_box);
+        // container.append(&center_box);
 
         Ok(Self {
             container,

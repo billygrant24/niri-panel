@@ -29,11 +29,14 @@ window {
 	border: 0;
 }
 
-.panel button.clock {
-    background-color: #4C566A66;
+.panel button:hover {
+    background-color: #4C566A44;
+}
+
+/* .panel button.clock {
     padding: 0 10px;
     margin-left: 10px;
-}
+} */
 
 button.workspace {
     border-radius: 0;
