@@ -238,12 +238,14 @@ impl Launcher {
 
         // Get NixOS profile paths
         let user_profile = format!("{}/.nix-profile/share/applications", home);
+        let home_profile = format!("{}/.local/state/nix/profiles/home-manager/home-path/share/applications", home);
         let system_profile = "/run/current-system/sw/share/applications".to_string();
 
         // Standard desktop file locations including NixOS paths
         let desktop_dirs = vec![
             // NixOS paths (check these first)
             &system_profile,
+            &home_profile,
             &user_profile,
             "/nix/var/nix/profiles/default/share/applications",
             // User-specific
