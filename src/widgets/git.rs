@@ -44,6 +44,7 @@ impl Git {
         let popover = Popover::new();
         popover.set_parent(&button);
         popover.add_css_class("git-popover");
+        popover.set_autohide(true);
 
         // Handle popover show event - enable keyboard mode
         let window_weak_show = window_weak.clone();
@@ -193,6 +194,7 @@ impl Git {
         // Handle Escape key to close popover
         let escape_controller = gtk4::EventControllerKey::new();
         let popover_weak_escape = popover.downgrade();
+        escape_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
         escape_controller.connect_key_pressed(move |_, key, _, _| {
             if key == gtk4::gdk::Key::Escape {
                 if let Some(popover) = popover_weak_escape.upgrade() {
@@ -213,6 +215,14 @@ impl Git {
         button.connect_clicked(move |_| {
             popover_ref.popup();
             // Focus search entry
+            if let Some(entry) = search_entry_weak.upgrade() {
+                entry.grab_focus();
+            }
+        });
+        
+        // Also add search entry focus handling when popover is mapped
+        let search_entry_weak = search_entry.downgrade();
+        popover.connect_map(move |_| {
             if let Some(entry) = search_entry_weak.upgrade() {
                 entry.grab_focus();
             }
